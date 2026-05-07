@@ -1,0 +1,497 @@
+/* ==== F5 — Расшифровка переменных: плавающая панель ==== */
+
+.f5ext-launcher {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2147483600;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #0b0f18;
+  color: #fff;
+  font: 1000 14px/42px Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  letter-spacing: .6px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: 0 10px 26px rgba(17, 24, 39, .28);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.f5ext-launcher:hover { transform: translateY(-1px); box-shadow: 0 14px 34px rgba(17, 24, 39, .32); }
+.f5ext-launcher.is-active { background: #111827; box-shadow: 0 14px 34px rgba(17, 24, 39, .35); }
+
+.f5ext-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 64px;
+  width: 460px;
+  height: 420px;
+  z-index: 2147483601;
+  display: none;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #111827;
+}
+.f5ext-panel.is-open { display: block; }
+
+.f5ext-panel-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .22), 0 2px 6px rgba(15,23,42,.08);
+  border: 1px solid rgba(15, 23, 42, .08);
+}
+.f5ext-panel-wrap { position: absolute; inset: 0; }
+.f5ext-panel-clip {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* resize handles */
+.f5ext-resize { position: absolute; z-index: 3; }
+.f5ext-resize[data-dir="n"]  { top:-3px; left:8px; right:8px; height:6px; cursor: ns-resize; }
+.f5ext-resize[data-dir="s"]  { bottom:-3px; left:8px; right:8px; height:6px; cursor: ns-resize; }
+.f5ext-resize[data-dir="e"]  { top:8px; bottom:8px; right:-3px; width:6px; cursor: ew-resize; }
+.f5ext-resize[data-dir="w"]  { top:8px; bottom:8px; left:-3px; width:6px; cursor: ew-resize; }
+.f5ext-resize[data-dir="ne"] { top:-3px; right:-3px; width:14px; height:14px; cursor: nesw-resize; }
+.f5ext-resize[data-dir="nw"] { top:-3px; left:-3px; width:14px; height:14px; cursor: nwse-resize; }
+.f5ext-resize[data-dir="se"] { bottom:-3px; right:-3px; width:14px; height:14px; cursor: nwse-resize; }
+.f5ext-resize[data-dir="sw"] { bottom:-3px; left:-3px; width:14px; height:14px; cursor: nesw-resize; }
+
+.f5ext-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  border-bottom: 1px solid rgba(15,23,42,.08);
+  cursor: move;
+  user-select: none;
+}
+.f5ext-panel-title { font-weight: 600; color: #0f172a; }
+.f5ext-panel-actions { display: inline-flex; gap: 6px; }
+.f5ext-btn-ic {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(15,23,42,.12);
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: 600 14px/22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  padding: 0;
+}
+.f5ext-btn-ic:hover { background: #f1f5f9; }
+
+.f5ext-panel-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  overflow: auto;
+  min-height: 0;
+  background: #fff;
+}
+
+.f5ext-input {
+  flex: 0 0 auto;
+  min-height: 84px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid rgba(15,23,42,.12);
+  border-radius: 8px;
+  outline: none;
+}
+.f5ext-input:focus { border-color: #1f6feb; background: #fff; box-shadow: 0 0 0 3px rgba(31,111,235,.15); }
+
+.f5ext-preview {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(15,23,42,.10);
+  border-radius: 8px;
+  background: #fff;
+  min-height: 0;
+}
+.f5ext-preview-head {
+  padding: 6px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748b;
+  border-bottom: 1px solid rgba(15,23,42,.08);
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+}
+.f5ext-preview-body {
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color: #0f172a;
+  overflow: auto;
+  min-height: 64px;
+}
+
+/* === цветные токены: переменная — мягкий оранжевый, модификатор — мягкий голубой === */
+/* Скобки/скобки вне переменной (например, текст между {{...}}) — нейтрально-серые */
+.f5ext-brace,
+.f5ext-paren { color: #6b7280; }
+
+.f5ext-var { cursor: pointer; border-radius: 2px; }
+.f5ext-var.is-resolved { color: #d97849; }
+.f5ext-var.is-unknown  { color: #c25450; }
+/* Подтокены внутри переменной наследуют её цвет — никакой пестроты */
+.f5ext-var * { color: inherit; }
+
+.f5ext-var:hover {
+  text-decoration: underline;
+  text-decoration-color: rgba(217, 120, 73, .55);
+  text-underline-offset: 3px;
+}
+.f5ext-var.is-expanded {
+  color: #d97849;
+  background: rgba(217, 120, 73, .10);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.f5ext-mod              { cursor: pointer; }
+.f5ext-mod.is-known     { color: #5b95c9; }
+.f5ext-mod.is-unknown   { color: #b08552; }
+.f5ext-mod:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Системные/базовые переменные шаблонизатора (lead.name, date.now, users(...).name и т.п.) */
+.f5ext-sysvar { cursor: pointer; border-radius: 2px; }
+.f5ext-sysvar.is-known   { color: #8b5cf6; }
+.f5ext-sysvar.is-unknown { color: #a78bfa; }
+.f5ext-sysvar * { color: inherit; }
+.f5ext-sysvar:hover {
+  text-decoration: underline;
+  text-decoration-color: rgba(139, 92, 246, .55);
+  text-underline-offset: 3px;
+}
+.f5ext-sysvar.is-expanded {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, .10);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+/* === Подсветка известного ID (когда переменная не распозналась) === */
+.f5ext-idhint {
+  cursor: help;
+  color: inherit;
+  border-bottom: 1px dotted rgba(217, 120, 73, .65);
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background .12s ease, border-bottom-color .12s ease;
+}
+.f5ext-idhint:hover {
+  background: rgba(217, 120, 73, .10);
+  border-bottom-style: solid;
+}
+/* Внутренний id внутри уже распознанной переменной — едва заметный, чтобы не спорил с её цветом */
+.f5ext-var.is-resolved .f5ext-idhint--inner,
+.f5ext-sysvar.is-known .f5ext-idhint--inner {
+  border-bottom-color: transparent;
+}
+.f5ext-var.is-resolved .f5ext-idhint--inner:hover,
+.f5ext-sysvar.is-known .f5ext-idhint--inner:hover {
+  background: transparent;
+}
+
+/* === панель модификатора === */
+.f5ext-modpanel {
+  display: none;
+  border: 1px solid rgba(15,23,42,.10);
+  border-radius: 8px;
+  background: #fff;
+  flex: 0 0 auto;
+}
+.f5ext-modpanel.is-open { display: block; }
+.f5ext-modpanel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid rgba(15,23,42,.08);
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+}
+.f5ext-modpanel-title {
+  font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color: #5b95c9;
+}
+.f5ext-modpanel-body { padding: 8px 10px; }
+.f5ext-modpanel-desc { color: #0f172a; margin-bottom: 6px; }
+.f5ext-modpanel-exhead {
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: #64748b; margin: 4px 0;
+}
+.f5ext-modpanel-ex {
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid rgba(15,23,42,.08);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 3px 0;
+  word-break: break-word;
+}
+.f5ext-modpanel-foot { color: #b07f1a; }
+
+.f5ext-status {
+  font-size: 12px;
+  color: #64748b;
+  min-height: 16px;
+}
+.f5ext-status.is-ok       { color: #15803d; }
+.f5ext-status.is-err      { color: #b91c1c; }
+.f5ext-status.is-progress { color: #1f6feb; }
+
+/* === панель «Шаблонизатор переменных» (список переменных аккаунта) === */
+.f5ext-vars {
+  position: fixed;
+  z-index: 2147483602;
+  width: 300px;
+  height: 420px;
+  display: none;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #111827;
+}
+.f5ext-vars.is-open { display: block; }
+.f5ext-vars-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .22), 0 2px 6px rgba(15, 23, 42, .08);
+  border: 1px solid rgba(15, 23, 42, .08);
+}
+.f5ext-vars-clip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.f5ext-vars-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+  cursor: move;
+  user-select: none;
+}
+.f5ext-vars-title { font-weight: 600; color: #0f172a; }
+.f5ext-vars-actions { display: inline-flex; gap: 6px; }
+.f5ext-vars-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 10px;
+  min-height: 0;
+}
+.f5ext-vars-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 -2px 2px;
+}
+.f5ext-vars-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  font: 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.f5ext-vars-tab:hover { background: #e2e8f0; }
+.f5ext-vars-tab.is-active {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+}
+.f5ext-vars-tab-count {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .08);
+  color: inherit;
+  min-width: 14px;
+  text-align: center;
+}
+.f5ext-vars-tab.is-active .f5ext-vars-tab-count { background: rgba(255, 255, 255, .2); }
+
+.f5ext-vars-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #475569;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.f5ext-vars-hint code {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background: rgba(15, 23, 42, .06);
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: #0f172a;
+}
+.f5ext-vars-row.is-idref .f5ext-vars-row-left { color: #0f172a; }
+.f5ext-vars-row-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 1px 5px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.f5ext-vars-row-ent { color: #64748b; }
+
+.f5ext-vars-search {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 8px;
+  outline: none;
+}
+.f5ext-vars-search:focus { border-color: #1f6feb; background: #fff; box-shadow: 0 0 0 3px rgba(31,111,235,.15); }
+.f5ext-vars-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 8px;
+  background: #fff;
+  min-height: 80px;
+}
+.f5ext-vars-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, .05);
+  cursor: pointer;
+  user-select: none;
+}
+.f5ext-vars-row:hover { background: #f8fafc; }
+.f5ext-vars-row:active { background: #eef2f7; }
+.f5ext-vars-row:last-child { border-bottom: none; }
+.f5ext-vars-row-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.f5ext-vars-row.is-system .f5ext-vars-row-left { color: #6d28d9; }
+.f5ext-vars-row.is-cf .f5ext-vars-row-left { color: #0f172a; }
+.f5ext-vars-row-right {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #64748b;
+  letter-spacing: .02em;
+}
+.f5ext-vars-empty {
+  padding: 16px 12px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+}
+.f5ext-vars-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px 0;
+  border-top: 1px solid rgba(15, 23, 42, .06);
+}
+.f5ext-vars-modlabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  color: #475569;
+}
+.f5ext-vars-mod {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 7px;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 6px;
+}
+
+/* === всплывающая подсказка над переменной/модификатором === */
+.f5ext-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  display: none;
+  max-width: 360px;
+  min-width: 200px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #f8fafc;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, .35);
+  pointer-events: none;
+}
+.f5ext-tooltip.is-open { display: block; }
+.f5ext-tt-title { font-weight: 600; margin-bottom: 4px; }
+.f5ext-tt-sub { color: #cbd5e1; font-size: 11px; margin-bottom: 6px; }
+.f5ext-tt-row { margin: 4px 0; }
+.f5ext-tt-key { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.f5ext-tt-val { color: #f1f5f9; }
+.f5ext-tt-ex {
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background: rgba(255,255,255,.06);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 3px 0;
+  word-break: break-word;
+  color: #e2e8f0;
+}
+.f5ext-tt-foot { color: #94a3b8; font-size: 11px; margin-top: 4px; }

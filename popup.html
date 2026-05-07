@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>F5 Расшифровка переменных</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="title">F5 Расшифровка</div>
+      <div class="domain" id="domain">—</div>
+    </div>
+
+    <div class="hint" id="hint">
+      Откройте amoCRM-аккаунт клиента и нажмите «Обновить словарь».
+      Затем используйте плавающую панель F5 на странице, чтобы расшифровать переменные.
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="k">Всего полей</div>
+        <div class="v" id="total">0</div>
+      </div>
+      <div class="stat">
+        <div class="k">Обновлено</div>
+        <div class="v" id="updated">—</div>
+      </div>
+    </div>
+
+    <div class="counters">
+      <div class="cnt"><span class="cnt-k">Сделки</span><span class="cnt-v" id="cnt-leads">0</span></div>
+      <div class="cnt"><span class="cnt-k">Контакты</span><span class="cnt-v" id="cnt-contacts">0</span></div>
+      <div class="cnt"><span class="cnt-k">Компании</span><span class="cnt-v" id="cnt-companies">0</span></div>
+      <div class="cnt"><span class="cnt-k">Каталоги</span><span class="cnt-v" id="cnt-catalogs">0</span></div>
+      <div class="cnt"><span class="cnt-k">Воронки</span><span class="cnt-v" id="cnt-pipelines">0</span></div>
+      <div class="cnt"><span class="cnt-k">Этапы</span><span class="cnt-v" id="cnt-statuses">0</span></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="refresh">Обновить словарь</button>
+      <button class="btn" id="open-panel">Открыть панель</button>
+      <button class="btn" id="toggle">Панель: вкл</button>
+      <button class="btn ghost" id="clear">Очистить домен</button>
+    </div>
+
+    <div class="result" id="result"></div>
+
+    <details class="adv">
+      <summary>Все домены в хранилище</summary>
+      <div id="domains" class="domains"></div>
+    </details>
+
+    <div class="foot">
+      Запросы идут к API текущего аккаунта (cookie/session). В сеть наружу ничего не уходит.
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
