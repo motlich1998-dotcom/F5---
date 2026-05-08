@@ -202,14 +202,17 @@
   background: rgba(217, 120, 73, .10);
   border-bottom-style: solid;
 }
-/* Внутренний id внутри уже распознанной переменной — едва заметный, чтобы не спорил с её цветом */
+/* Внутренний id внутри уже распознанной переменной — пунктир тем же цветом, что и сама переменная,
+   чтобы было видно, что это самостоятельная подсказка, но цвета не пестрили */
 .f5ext-var.is-resolved .f5ext-idhint--inner,
 .f5ext-sysvar.is-known .f5ext-idhint--inner {
-  border-bottom-color: transparent;
+  border-bottom-color: currentColor;
+  opacity: .9;
 }
 .f5ext-var.is-resolved .f5ext-idhint--inner:hover,
 .f5ext-sysvar.is-known .f5ext-idhint--inner:hover {
-  background: transparent;
+  background: rgba(15, 23, 42, .06);
+  border-bottom-style: solid;
 }
 
 /* === панель модификатора === */

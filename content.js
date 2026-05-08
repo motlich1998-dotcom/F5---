@@ -1273,10 +1273,9 @@
       const v = e.target.closest('.f5ext-var');
       const sv = e.target.closest('.f5ext-sysvar');
       const m = e.target.closest('.f5ext-mod');
-      // Если id-хинт находится внутри РАСПОЗНАННОЙ переменной — пусть побеждает тултип переменной.
-      const insideKnownVar = (v && v.classList.contains('is-resolved'))
-        || (sv && sv.classList.contains('is-known'));
-      if (idh && !insideKnownVar) { showIdHintTip(idh, e.clientX, e.clientY); return; }
+      // Наведение прямо на цифру ID всегда показывает, что это за объект —
+      // даже внутри уже распознанной переменной (например, id воронки в leadsCount(<id>/...)).
+      if (idh) { showIdHintTip(idh, e.clientX, e.clientY); return; }
       if (v) { showVarTip(v, e.clientX, e.clientY); return; }
       if (sv) { showSysVarTip(sv, e.clientX, e.clientY); return; }
       if (m) { showModTip(m, e.clientX, e.clientY); }
