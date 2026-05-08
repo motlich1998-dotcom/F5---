@@ -417,6 +417,10 @@
 .f5ext-vars-row:hover { background: #f8fafc; }
 .f5ext-vars-row:active { background: #eef2f7; }
 .f5ext-vars-row:last-child { border-bottom: none; }
+.f5ext-vars-row.is-copied {
+  background: #dcfce7;
+  transition: background .35s ease;
+}
 .f5ext-vars-row-left {
   flex: 1 1 auto;
   min-width: 0;

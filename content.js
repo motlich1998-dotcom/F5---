@@ -250,7 +250,7 @@
       +         '</div>'
       +       '</div>'
       +       '<div class="f5ext-panel-body">'
-      +         '<textarea class="f5ext-input" placeholder="{{lead.cf(123456)}}, {{lead.name}}, {{date.now}} или любой текст с переменными"></textarea>'
+      +         '<textarea class="f5ext-input" placeholder="Вставьте сюда текст с переменными — он расшифруется ниже. Переменные из шаблонизатора копируются в буфер обмена."></textarea>'
       +         '<div class="f5ext-preview"><div class="f5ext-preview-head">Предпросмотр</div><div class="f5ext-preview-body"></div></div>'
       +         '<div class="f5ext-modpanel" aria-live="polite">'
       +           '<div class="f5ext-modpanel-head">'
@@ -1049,17 +1049,31 @@
     return insertText;
   }
 
-  function insertAtCursor(text) {
-    const ta = elements.input;
-    if (!ta) return;
-    const start = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
-    const end = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
-    const v = ta.value || '';
-    ta.value = v.slice(0, start) + text + v.slice(end);
-    const pos = start + text.length;
-    ta.selectionStart = ta.selectionEnd = pos;
-    ta.focus();
-    reRenderPreview();
+  function copyToClipboard(text) {
+    if (!text) return Promise.resolve(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy(text));
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+  function fallbackCopy(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e) { return false; }
+  }
+  function flashRowCopied(row) {
+    if (!row) return;
+    row.classList.add('is-copied');
+    setTimeout(() => { try { row.classList.remove('is-copied'); } catch (e) {} }, 700);
   }
 
   function syncVarsHeight() {
@@ -1214,7 +1228,14 @@
       const insert = row.dataset.insert || '';
       if (!insert) return;
       const finalText = applyModifierToInsert(insert);
-      insertAtCursor(finalText);
+      copyToClipboard(finalText).then((ok) => {
+        if (ok) {
+          flashRowCopied(row);
+          setStatus('Скопировано: ' + finalText, 'is-ok');
+        } else {
+          setStatus('Не удалось скопировать. Скопируйте вручную: ' + finalText, 'is-err');
+        }
+      });
     });
 
     const head = elements.vars.querySelector('.f5ext-vars-head');
