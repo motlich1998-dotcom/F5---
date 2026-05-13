@@ -29,7 +29,7 @@ async function readStorage() {
   const raw = await chrome.storage.local.get([STORAGE_DICT_KEY, STORAGE_SETTINGS_KEY]);
   return {
     dict: raw[STORAGE_DICT_KEY] || {},
-    settings: raw[STORAGE_SETTINGS_KEY] || { panelEnabled: true }
+    settings: raw[STORAGE_SETTINGS_KEY] || { panelEnabled: true, hideAmma: false }
   };
 }
 
@@ -95,6 +95,11 @@ async function refreshUi() {
 
   const panelEnabled = settings.panelEnabled !== false;
   $('#toggle').textContent = 'Панель: ' + (panelEnabled ? 'вкл' : 'выкл');
+  const hideAmma = !!settings.hideAmma;
+  $('#toggle-amma').textContent = 'Кнопка Аммы: ' + (hideAmma ? 'скрыта' : 'показана');
+  $('#toggle-amma').title = hideAmma
+    ? 'Нажмите, чтобы вернуть кнопку «Открыть чат с Аммой» на странице амоCRM'
+    : 'Нажмите, чтобы скрыть кнопку «Открыть чат с Аммой» на страницах амоCRM';
 
   const $refresh = $('#refresh');
   if (!isAmoHost(host)) {
@@ -200,6 +205,37 @@ async function onToggle() {
   }
 }
 
+let toggleAmmaBusy = false;
+async function onToggleAmma() {
+  if (toggleAmmaBusy) return;
+  toggleAmmaBusy = true;
+  const $btn = $('#toggle-amma');
+  $btn.disabled = true;
+  try {
+    const { settings } = await readStorage();
+    const cur = !!settings.hideAmma;
+    const next = Object.assign({}, settings, { hideAmma: !cur });
+    await writeSettings(next);
+    await refreshUi();
+    const tab = await getActiveTab();
+    if (tab && tab.id && isAmoHost(hostnameFromUrl(tab.url || ''))) {
+      try {
+        await ensureContentScript(tab.id);
+        await chrome.tabs.sendMessage(tab.id, { type: 'F5VR_TOGGLE_AMMA_HIDDEN', hidden: next.hideAmma });
+      } catch (e) { /* noop */ }
+    }
+    if (cur) {
+      // Убираем скрытие — Амма должна сразу появиться, перезагрузка не нужна.
+      setResult('Кнопка Аммы возвращена.', 'is-ok');
+    } else {
+      setResult('Кнопка Аммы скрыта на amoCRM-страницах.', 'is-ok');
+    }
+  } finally {
+    toggleAmmaBusy = false;
+    $btn.disabled = false;
+  }
+}
+
 async function onOpenPanel() {
   const tab = await getActiveTab();
   if (!tab || !tab.id) { setResult('Нет активной вкладки', 'is-err'); return; }
@@ -233,6 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#refresh').addEventListener('click', onRefresh);
   $('#clear').addEventListener('click', onClear);
   $('#toggle').addEventListener('click', onToggle);
+  $('#toggle-amma').addEventListener('click', onToggleAmma);
   $('#open-panel').addEventListener('click', onOpenPanel);
   refreshUi();
 });

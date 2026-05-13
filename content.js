@@ -20,6 +20,7 @@
     counters: { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0 },
     errors: [],
     panelEnabled: true,
+    hideAmma: false,
     idIndex: {}
   };
 
@@ -88,7 +89,7 @@
       chrome.storage.local.get([STORAGE_DICT_KEY, STORAGE_SETTINGS_KEY, STORAGE_PANEL_RECT_KEY], (raw) => {
         resolve({
           dict: raw[STORAGE_DICT_KEY] || {},
-          settings: raw[STORAGE_SETTINGS_KEY] || { panelEnabled: true },
+          settings: raw[STORAGE_SETTINGS_KEY] || { panelEnabled: true, hideAmma: false },
           rect: raw[STORAGE_PANEL_RECT_KEY] || null
         });
       });
@@ -112,6 +113,7 @@
   async function loadStateFromStorage() {
     const { dict, settings } = await readStorage();
     state.panelEnabled = settings.panelEnabled !== false;
+    state.hideAmma = !!settings.hideAmma;
     const entry = dict[HOST];
     if (entry) {
       state.fields = entry.fields || {};
@@ -362,6 +364,36 @@
     if (state.panelEnabled && !panelMounted) mountPanel();
     else if (!state.panelEnabled && panelMounted) unmountPanel();
     else if (!state.panelEnabled) removeOrphanDom();
+  }
+
+  // Скрытие/возврат кнопки «Открыть чат с Аммой» через CSS-инъекцию.
+  // Используются стабильные атрибуты (aria-label/alt/имя файла иконки), а не
+  // хешированные классы amoCRM. Применяется без MutationObserver — стилевое
+  // правило само распространяется на любые экземпляры кнопки на странице.
+  // Чтобы вернуть Амму после её скрытия — нужна перезагрузка вкладки только
+  // в случае, когда amoCRM держит её в memo-компоненте; обычно достаточно
+  // снять стиль (если у кнопки нет своих transition). На практике перезагрузка
+  // не требуется, но рекомендована — это стандартный путь для расширений-стилеров.
+  const AMMA_STYLE_ID = 'f5ext-amma-hide';
+  const AMMA_HIDE_CSS = ''
+    + 'button[aria-label*="Аммой" i],'
+    + 'button[aria-label*="Amma" i],'
+    + 'a[aria-label*="Аммой" i],'
+    + 'a[aria-label*="Amma" i] {'
+    +   'display: none !important;'
+    + '}';
+
+  function applyAmmaHidden() {
+    const existing = document.getElementById(AMMA_STYLE_ID);
+    if (state.hideAmma) {
+      if (existing) return;
+      const style = document.createElement('style');
+      style.id = AMMA_STYLE_ID;
+      style.textContent = AMMA_HIDE_CSS;
+      (document.head || document.documentElement).appendChild(style);
+    } else if (existing && existing.parentNode) {
+      existing.parentNode.removeChild(existing);
+    }
   }
 
   function setStatus(msg, kind) {
@@ -1410,6 +1442,7 @@
     if (changes[STORAGE_DICT_KEY] || changes[STORAGE_SETTINGS_KEY]) {
       loadStateFromStorage().then(() => {
         applyPanelEnabled();
+        applyAmmaHidden();
         reRenderPreview();
         if (isVarsOpen()) renderVars();
       });
@@ -1433,6 +1466,12 @@
     if (msg.type === 'F5VR_TOGGLE_PANEL_ENABLED') {
       state.panelEnabled = !!msg.enabled;
       applyPanelEnabled();
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (msg.type === 'F5VR_TOGGLE_AMMA_HIDDEN') {
+      state.hideAmma = !!msg.hidden;
+      applyAmmaHidden();
       sendResponse({ ok: true });
       return false;
     }
@@ -1463,6 +1502,7 @@
     }
     loadStateFromStorage().then(() => {
       applyPanelEnabled();
+      applyAmmaHidden();
       const stale = !state.fetchedAt || (Date.now() - state.fetchedAt) > TTL_MS;
       if (stale) setTimeout(() => { refreshDictionary(); }, 1500);
     });

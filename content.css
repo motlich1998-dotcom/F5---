@@ -5,12 +5,12 @@
   right: 14px;
   bottom: 14px;
   z-index: 2147483600;
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   background: #0b0f18;
   color: #fff;
-  font: 1000 18px/60px Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font: 1000 14px/42px Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   letter-spacing: .6px;
   text-align: center;
   cursor: pointer;
