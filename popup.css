@@ -10,6 +10,11 @@ body {
 .wrap { padding: 12px 14px 10px; }
 .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
 .title { font-weight: 800; font-size: 14px; }
+.title .ver {
+  font-size: 10px; font-weight: 700; color: #94a3b8;
+  background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
+  padding: 1px 5px; margin-left: 6px; letter-spacing: .02em;
+}
 .domain {
   font-size: 11px; color: #475569; font-weight: 700; max-width: 220px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -59,3 +64,4 @@ body {
 .domain-row .dr-name { font-weight: 700; color: #111; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .domain-row .dr-cnt { color: #6b7280; }
 .foot { margin-top: 6px; color: #94a3b8; font-size: 11px; text-align: center; }
+.foot.foot-ver { margin-top: 2px; }

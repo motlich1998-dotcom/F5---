@@ -242,7 +242,7 @@
       +   '<div class="f5ext-panel-wrap">'
       +     '<div class="f5ext-panel-clip">'
       +       '<div class="f5ext-panel-head">'
-      +         '<div class="f5ext-panel-title">F5 — Расшифровка переменных</div>'
+      +         '<div class="f5ext-panel-title">F5 — Расшифровка переменных <span class="f5ext-panel-ver"></span></div>'
       +         '<div class="f5ext-panel-actions">'
       +           '<button type="button" class="f5ext-btn-ic js-vars-toggle" title="Шаблонизатор переменных">{…}</button>'
       +           '<button type="button" class="f5ext-btn-ic js-refresh" title="Обновить словарь">⟳</button>'
@@ -315,6 +315,12 @@
     elements.varsModSel = vars.querySelector('.f5ext-vars-mod');
     elements.varsTabs = vars.querySelector('.f5ext-vars-tabs');
     elements.varsHint = vars.querySelector('.f5ext-vars-hint');
+
+    try {
+      const v = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+      const verEl = panel.querySelector('.f5ext-panel-ver');
+      if (v && verEl) verEl.textContent = 'v' + v;
+    } catch (_) { /* noop */ }
 
     const tip = document.createElement('div');
     tip.className = 'f5ext-tooltip';
@@ -892,7 +898,10 @@
         insert: insert,
         desc: desc,
         example: '',
-        pipelineName: f.pipelineName || ''
+        pipelineName: f.pipelineName || '',
+        pipelineId: f.pipelineId != null ? String(f.pipelineId) : '',
+        sort: f.sort || 0,
+        isMain: !!f.is_main
       });
     }
     const sys = window.F5VRParser.listSystemVars ? window.F5VRParser.listSystemVars() : [];
@@ -952,41 +961,106 @@
     elements.varsTabs.appendChild(frag);
   }
 
+  // Создаёт DOM-строку для одной переменной шаблонизатора.
+  function makeVarRow(it, options) {
+    options = options || {};
+    const row = document.createElement('div');
+    let rowKindCls = ' is-cf';
+    if (it.kind === 'system') rowKindCls = ' is-system';
+    else if (it.kind === 'idref') rowKindCls = ' is-idref';
+    if (options.headerForPipeline) rowKindCls += ' is-pipeline-header';
+    if (options.statusChild) rowKindCls += ' is-status-child';
+    row.className = 'f5ext-vars-row' + rowKindCls;
+    row.dataset.insert = it.insert;
+    row.dataset.canonical = it.canonical;
+    if (it.desc) row.title = it.desc + (it.example ? '\n\nПример: ' + it.example : '');
+    const left = document.createElement('div');
+    left.className = 'f5ext-vars-row-left';
+    if (options.headerForPipeline) {
+      left.innerHTML = 'Воронка: <b>«' + escapeHtml(it.name) + '»</b>'
+        + (it.isMain ? ' <span class="f5ext-vars-row-mainbadge">основная</span>' : '');
+    } else {
+      left.textContent = it.name;
+    }
+    const right = document.createElement('div');
+    right.className = 'f5ext-vars-row-right';
+    if (it.kind === 'idref') {
+      let entLabel = entityShortLabel(it.entityKey);
+      if (options.showPipelineForStatus && it.entityKey === 'statuses' && it.pipelineName) {
+        entLabel = 'Этап · ' + it.pipelineName;
+      }
+      right.innerHTML = '<span class="f5ext-vars-row-badge">ID</span>'
+        + '<span class="f5ext-vars-row-ent">' + escapeHtml(entLabel) + '</span>';
+    } else {
+      right.textContent = entityShortLabel(it.entityKey);
+    }
+    row.appendChild(left);
+    row.appendChild(right);
+    return row;
+  }
+
+  // Группированный рендер для вкладки «Воронки»: воронка-заголовок + её этапы под ней.
+  function renderPipelinesGrouped(items, frag) {
+    const pipelines = [];
+    const statusesByPipeline = {};
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.entityKey === 'pipelines') {
+        pipelines.push(it);
+      } else if (it.entityKey === 'statuses') {
+        const pid = it.pipelineId || '';
+        (statusesByPipeline[pid] = statusesByPipeline[pid] || []).push(it);
+      }
+    }
+    pipelines.sort((a, b) => (a.sort - b.sort) || (a.name || '').localeCompare(b.name || '', 'ru'));
+    Object.keys(statusesByPipeline).forEach((pid) => {
+      statusesByPipeline[pid].sort((a, b) => (a.sort - b.sort) || (a.name || '').localeCompare(b.name || '', 'ru'));
+    });
+    let shown = 0;
+    for (let i = 0; i < pipelines.length; i++) {
+      const p = pipelines[i];
+      frag.appendChild(makeVarRow(p, { headerForPipeline: true }));
+      shown++;
+      const statuses = statusesByPipeline[p.fieldId] || [];
+      for (let j = 0; j < statuses.length; j++) {
+        frag.appendChild(makeVarRow(statuses[j], { statusChild: true }));
+        shown++;
+      }
+    }
+    // Этапы, у которых не нашлось воронки (на всякий случай).
+    const orphanStatuses = statusesByPipeline[''] || [];
+    if (orphanStatuses.length) {
+      orphanStatuses.forEach((s) => {
+        frag.appendChild(makeVarRow(s, { showPipelineForStatus: true }));
+        shown++;
+      });
+    }
+    return shown;
+  }
+
   function renderVarsList() {
     if (!elements.varsList) return;
     const q = (elements.varsSearch && elements.varsSearch.value || '').trim().toLowerCase();
     const items = getAllVars();
     const frag = document.createDocumentFragment();
     let shown = 0;
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (activeVarsGroup !== 'all' && groupOf(it.entityKey) !== activeVarsGroup) continue;
-      const hay = ((it.name || '') + ' ' + (it.canonical || '') + ' ' + (it.desc || '')).toLowerCase();
-      if (q && hay.indexOf(q) === -1) continue;
-      const row = document.createElement('div');
-      let rowKindCls = ' is-cf';
-      if (it.kind === 'system') rowKindCls = ' is-system';
-      else if (it.kind === 'idref') rowKindCls = ' is-idref';
-      row.className = 'f5ext-vars-row' + rowKindCls;
-      row.dataset.insert = it.insert;
-      row.dataset.canonical = it.canonical;
-      if (it.desc) row.title = it.desc + (it.example ? '\n\nПример: ' + it.example : '');
-      const left = document.createElement('div');
-      left.className = 'f5ext-vars-row-left';
-      left.textContent = it.name;
-      const right = document.createElement('div');
-      right.className = 'f5ext-vars-row-right';
-      if (it.kind === 'idref') {
-        right.innerHTML = '<span class="f5ext-vars-row-badge">ID</span>'
-          + '<span class="f5ext-vars-row-ent">' + escapeHtml(entityShortLabel(it.entityKey)) + '</span>';
-      } else {
-        right.textContent = entityShortLabel(it.entityKey);
+
+    // Спец-режим: вкладка «Воронки» без поиска — группированный вид (воронка → этапы).
+    if (activeVarsGroup === 'pipeline' && !q) {
+      const pipelineItems = items.filter((it) => groupOf(it.entityKey) === 'pipeline');
+      shown = renderPipelinesGrouped(pipelineItems, frag);
+    } else {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (activeVarsGroup !== 'all' && groupOf(it.entityKey) !== activeVarsGroup) continue;
+        const hay = ((it.name || '') + ' ' + (it.canonical || '') + ' '
+          + (it.desc || '') + ' ' + (it.pipelineName || '')).toLowerCase();
+        if (q && hay.indexOf(q) === -1) continue;
+        frag.appendChild(makeVarRow(it, { showPipelineForStatus: true }));
+        shown++;
       }
-      row.appendChild(left);
-      row.appendChild(right);
-      frag.appendChild(row);
-      shown++;
     }
+
     elements.varsList.innerHTML = '';
     if (!shown) {
       const empty = document.createElement('div');

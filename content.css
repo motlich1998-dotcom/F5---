@@ -5,12 +5,12 @@
   right: 14px;
   bottom: 14px;
   z-index: 2147483600;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
   background: #0b0f18;
   color: #fff;
-  font: 1000 14px/42px Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font: 1000 18px/60px Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   letter-spacing: .6px;
   text-align: center;
   cursor: pointer;
@@ -75,6 +75,20 @@
   user-select: none;
 }
 .f5ext-panel-title { font-weight: 600; color: #0f172a; }
+.f5ext-panel-ver {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid rgba(15,23,42,.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  letter-spacing: .02em;
+  vertical-align: middle;
+}
+.f5ext-panel-ver:empty { display: none; }
 .f5ext-panel-actions { display: inline-flex; gap: 6px; }
 .f5ext-btn-ic {
   width: 26px; height: 26px;
@@ -170,7 +184,8 @@
 .f5ext-mod              { cursor: pointer; }
 .f5ext-mod.is-known     { color: #5b95c9; }
 .f5ext-mod.is-unknown   { color: #b08552; }
-.f5ext-mod:hover { text-decoration: underline; text-underline-offset: 3px; }
+.f5ext-mod-name         { color: inherit; font-weight: 600; }
+.f5ext-mod:hover .f5ext-mod-name { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Системные/базовые переменные шаблонизатора (lead.name, date.now, users(...).name и т.п.) */
 .f5ext-sysvar { cursor: pointer; border-radius: 2px; }
@@ -382,6 +397,43 @@
   border: 1px solid #fde68a;
 }
 .f5ext-vars-row-ent { color: #64748b; }
+
+/* Группировка во вкладке «Воронки»: заголовок воронки и отступ для её этапов. */
+.f5ext-vars-row.is-pipeline-header {
+  background: #f8fafc;
+  border-top: 1px solid rgba(15, 23, 42, .08);
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+}
+.f5ext-vars-row.is-pipeline-header:first-child { border-top: none; }
+.f5ext-vars-row.is-pipeline-header .f5ext-vars-row-left {
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 12px;
+  white-space: normal;
+}
+.f5ext-vars-row.is-status-child .f5ext-vars-row-left {
+  padding-left: 14px;
+  position: relative;
+}
+.f5ext-vars-row.is-status-child .f5ext-vars-row-left::before {
+  content: "└";
+  position: absolute;
+  left: 2px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.f5ext-vars-row-mainbadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 1px 5px;
+  margin-left: 6px;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
 
 .f5ext-vars-search {
   flex: 0 0 auto;

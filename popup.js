@@ -222,6 +222,13 @@ async function onOpenPanel() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const v = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+    if (v) {
+      const verEl = $('#ver'); if (verEl) verEl.textContent = 'v' + v;
+      const verFootEl = $('#ver-foot'); if (verFootEl) verFootEl.textContent = v;
+    }
+  } catch (_) { /* noop */ }
   bindProgressListener();
   $('#refresh').addEventListener('click', onRefresh);
   $('#clear').addEventListener('click', onClear);
