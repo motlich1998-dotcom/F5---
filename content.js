@@ -17,7 +17,7 @@
   const state = {
     fields: {},
     fetchedAt: 0,
-    counters: { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0 },
+    counters: { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0, users: 0, userGroups: 0 },
     errors: [],
     panelEnabled: true,
     hideAmma: false,
@@ -64,7 +64,11 @@
         name: f.name || '',
         type: f.type || '',
         pipelineName: f.pipelineName || '',
-        catalogName: f.catalogName || ''
+        catalogName: f.catalogName || '',
+        groupName: f.groupName || '',
+        email: f.email || '',
+        isAdmin: !!f.isAdmin,
+        isActive: f.isActive !== false
       });
     }
     return out;
@@ -75,7 +79,8 @@
   let elements = createEmptyElements();
   function createEmptyElements() {
     return {
-      btn: null, panel: null, input: null, preview: null,
+      btn: null, launcherWrap: null, dockBtn: null,
+      panel: null, input: null, preview: null,
       modPanel: null, status: null, tip: null,
       vars: null, varsList: null, varsSearch: null, varsModSel: null, varsTabs: null, varsHint: null
     };
@@ -123,7 +128,7 @@
     } else {
       state.fields = {};
       state.fetchedAt = 0;
-      state.counters = { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0 };
+      state.counters = { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0, users: 0, userGroups: 0 };
       state.errors = [];
     }
     rebuildIdIndex();
@@ -208,7 +213,7 @@
   function escapeHtml(s) { return window.F5VRParser.escapeHtml(s); }
 
   function removeOrphanDom() {
-    const sel = '#f5ext-launcher, #f5ext-panel, #f5ext-vars, .f5ext-tooltip';
+    const sel = '#f5ext-launcher-wrap, #f5ext-launcher, #f5ext-panel, #f5ext-vars, .f5ext-tooltip';
     document.querySelectorAll(sel).forEach((n) => {
       try { n.remove(); } catch (e) {}
     });
@@ -222,11 +227,26 @@
     panelMounted = true;
     ensureStyles();
 
+    // Лаунчер + hover-фартук с шорткатом «Шаблонизатор» лежат в одном wrapper —
+    // так курсор не «теряет» dock при движении между F5 и иконкой {…}.
+    const launcherWrap = document.createElement('div');
+    launcherWrap.id = 'f5ext-launcher-wrap';
+    launcherWrap.className = 'f5ext-launcher-wrap';
+
+    const launcherDock = document.createElement('div');
+    launcherDock.className = 'f5ext-launcher-dock';
+    launcherDock.innerHTML = ''
+      + '<button type="button" class="f5ext-dock-btn js-open-vars" '
+      +   'title="Шаблонизатор переменных" aria-label="Шаблонизатор переменных">{…}</button>';
+
     const btn = document.createElement('div');
     btn.id = 'f5ext-launcher';
     btn.className = 'f5ext-launcher';
     btn.textContent = 'F5';
-    btn.title = 'Расшифровка переменных';
+    btn.title = 'Открыть расшифровщик · наведите для шаблонизатора';
+
+    launcherWrap.appendChild(launcherDock);
+    launcherWrap.appendChild(btn);
 
     const panel = document.createElement('div');
     panel.id = 'f5ext-panel';
@@ -301,11 +321,13 @@
       +   '</div>'
       + '</div>';
 
-    document.body.appendChild(btn);
+    document.body.appendChild(launcherWrap);
     document.body.appendChild(panel);
     document.body.appendChild(vars);
 
     elements.btn = btn;
+    elements.launcherWrap = launcherWrap;
+    elements.dockBtn = launcherDock.querySelector('.f5ext-dock-btn');
     elements.panel = panel;
     elements.input = panel.querySelector('.f5ext-input');
     elements.preview = panel.querySelector('.f5ext-preview-body');
@@ -335,6 +357,7 @@
     bindInputAndPreview();
     bindPreviewEvents();
     bindVarsPanel();
+    bindFrontFocus();
 
     chrome.storage.local.get(STORAGE_PANEL_RECT_KEY, (raw) => {
       if (!panelMounted) return;
@@ -350,7 +373,8 @@
   }
 
   function unmountPanel() {
-    try { if (elements.btn && elements.btn.parentNode) elements.btn.parentNode.removeChild(elements.btn); } catch (e) {}
+    if (dockHideTimer) { clearTimeout(dockHideTimer); dockHideTimer = null; }
+    try { if (elements.launcherWrap && elements.launcherWrap.parentNode) elements.launcherWrap.parentNode.removeChild(elements.launcherWrap); } catch (e) {}
     try { if (elements.panel && elements.panel.parentNode) elements.panel.parentNode.removeChild(elements.panel); } catch (e) {}
     try { if (elements.vars && elements.vars.parentNode) elements.vars.parentNode.removeChild(elements.vars); } catch (e) {}
     try { if (elements.tip && elements.tip.parentNode) elements.tip.parentNode.removeChild(elements.tip); } catch (e) {}
@@ -403,28 +427,101 @@
     elements.status.textContent = msg || '';
   }
 
+  // ---------------------------------------------------------------------------
+  // Z-index «как у обычных окон»: то, что трогали последним — всегда сверху.
+  // Оба окна имеют одинаковый базовый z-index в CSS; активному добавляется класс
+  // is-front, который поднимает его над неактивным.
+  // ---------------------------------------------------------------------------
+  function bringToFront(el) {
+    if (!el) return;
+    if (elements.panel) elements.panel.classList.remove('is-front');
+    if (elements.vars)  elements.vars.classList.remove('is-front');
+    el.classList.add('is-front');
+  }
+
+  function bindFrontFocus() {
+    if (elements.panel) {
+      elements.panel.addEventListener('mousedown', () => bringToFront(elements.panel), true);
+    }
+    if (elements.vars) {
+      elements.vars.addEventListener('mousedown', () => bringToFront(elements.vars), true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Лаунчер F5 + hover-«фартук»
+  //   • Клик по самой F5 → toggle расшифровщика.
+  //   • Hover на F5 (или на фартук) → выезжает кнопка {…} для шаблонизатора.
+  //   • Клик по {…} → toggle шаблонизатора, активная иконка подсвечивается.
+  // ---------------------------------------------------------------------------
+  let dockHideTimer = null;
+  const DOCK_HIDE_DELAY_MS = 220;
+
+  function showLauncherDock() {
+    if (!elements.launcherWrap) return;
+    if (dockHideTimer) { clearTimeout(dockHideTimer); dockHideTimer = null; }
+    elements.launcherWrap.classList.add('is-hover');
+  }
+  function hideLauncherDockSoon() {
+    if (!elements.launcherWrap) return;
+    if (dockHideTimer) clearTimeout(dockHideTimer);
+    dockHideTimer = setTimeout(() => {
+      dockHideTimer = null;
+      if (elements.launcherWrap) elements.launcherWrap.classList.remove('is-hover');
+    }, DOCK_HIDE_DELAY_MS);
+  }
+
+  function syncDockState() {
+    const open = isVarsOpen();
+    if (elements.dockBtn) elements.dockBtn.classList.toggle('is-active', open);
+    // Ту же подсветку используем и для кнопки «{…}» в шапке расшифровщика —
+    // чтобы пользователь сразу видел, открыт ли уже шаблонизатор.
+    if (elements.panel) {
+      const headerBtn = elements.panel.querySelector('.js-vars-toggle');
+      if (headerBtn) headerBtn.classList.toggle('is-active', open);
+    }
+  }
+
   function bindLauncher() {
     elements.btn.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       togglePanel();
     });
+
+    if (elements.dockBtn) {
+      elements.dockBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        toggleVarsPanel();
+      });
+    }
+
+    if (elements.launcherWrap) {
+      elements.launcherWrap.addEventListener('mouseenter', showLauncherDock);
+      elements.launcherWrap.addEventListener('mouseleave', hideLauncherDockSoon);
+      // На случай быстрых событий focusin/focusout (клавиатурная навигация).
+      elements.launcherWrap.addEventListener('focusin',  showLauncherDock);
+      elements.launcherWrap.addEventListener('focusout', (focusEvent) => {
+        // Скрываем dock только если фокус ушёл за пределы wrap'а.
+        const next = focusEvent.relatedTarget;
+        if (!next || !elements.launcherWrap.contains(next)) hideLauncherDockSoon();
+      });
+    }
+
+    syncDockState();
   }
 
   function openPanel() {
     elements.panel.classList.add('is-open');
     if (elements.btn) elements.btn.classList.add('is-active');
+    bringToFront(elements.panel);
     setTimeout(() => { try { elements.input.focus(); } catch (e) {} }, 0);
-    getVarsState().then((s) => {
-      if (!elements.panel || !elements.panel.classList.contains('is-open')) return;
-      if (s && s.open) openVarsPanel();
-    });
   }
   function closePanel() {
     elements.panel.classList.remove('is-open');
     if (elements.btn) elements.btn.classList.remove('is-active');
     if (elements.tip) elements.tip.classList.remove('is-open');
     if (elements.modPanel) elements.modPanel.classList.remove('is-open');
-    if (elements.vars) elements.vars.classList.remove('is-open');
+    // Шаблонизатор живёт независимо и не закрывается вместе с расшифровщиком.
   }
   function togglePanel() {
     if (elements.panel.classList.contains('is-open')) closePanel();
@@ -664,10 +761,17 @@
     } else {
       candidates.forEach((c) => {
         const ent = window.F5VRParser.entityLabel(c.entityKey);
-        const typeRu = c.type ? window.F5VRParser.fieldTypeLabel(c.type) : '';
+        const typeRu = c.type && c.entityKey !== 'users' && c.entityKey !== 'usersGroups'
+          ? window.F5VRParser.fieldTypeLabel(c.type) : '';
         let line = ent + ' · «' + c.name + '»';
         if (typeRu) line += ' · ' + typeRu;
         if (c.pipelineName) line += ' · воронка «' + c.pipelineName + '»';
+        if (c.entityKey === 'users') {
+          if (c.email) line += ' · ' + c.email;
+          if (c.groupName) line += ' · группа «' + c.groupName + '»';
+          if (c.isAdmin) line += ' · админ';
+          if (c.isActive === false) line += ' · неактивен';
+        }
         body += '<div class="f5ext-tt-row"><div class="f5ext-tt-val">' + escapeHtml(line) + '</div></div>';
       });
     }
@@ -854,7 +958,7 @@
     if (entityKey === 'companies' || entityKey === 'company') return 'company';
     if (entityKey === 'client') return 'client';
     if (entityKey === 'date') return 'date';
-    if (entityKey === 'users' || entityKey === 'user') return 'user';
+    if (entityKey === 'users' || entityKey === 'user' || entityKey === 'usersGroups') return 'user';
     if (entityKey === 'random') return 'random';
     if (entityKey === 'pipelines' || entityKey === 'statuses') return 'pipeline';
     if (typeof entityKey === 'string' && entityKey.indexOf('catalogs:') === 0) return 'catalog';
@@ -868,6 +972,7 @@
     if (entityKeyOrRoot === 'client') return 'Клиент';
     if (entityKeyOrRoot === 'date') return 'Дата';
     if (entityKeyOrRoot === 'users' || entityKeyOrRoot === 'user') return 'Пользователь';
+    if (entityKeyOrRoot === 'usersGroups') return 'Группа';
     if (entityKeyOrRoot === 'random') return 'Случайное';
     if (entityKeyOrRoot === 'pipelines') return 'Воронка';
     if (entityKeyOrRoot === 'statuses') return 'Этап';
@@ -909,6 +1014,25 @@
           const argEx = (f.pipelineId ? f.pipelineId + '/' : '') + fieldId;
           desc = (f.pipelineName ? 'Воронка: «' + f.pipelineName + '». ' : '') + 'ID: ' + fieldId
             + '. Используется как аргумент, например: {{contact.leadsCount(' + argEx + ')}}.';
+        } else if (entityKey === 'users') {
+          // ID пользователя amoCRM; в шаблонах подставляется аргументом
+          // в системные переменные {{users(<id>).name}}, {{users(<id>).group_id}} и т. п.
+          insert = fieldId;
+          kind = 'idref';
+          const adminMark = f.isAdmin ? ' • админ' : '';
+          const inactiveMark = f.isActive === false ? ' • деактивирован' : '';
+          const groupPart = f.groupName ? ' Группа: «' + f.groupName + '».' : '';
+          const emailPart = f.email ? ' E-mail: ' + f.email + '.' : '';
+          desc = 'ID пользователя: ' + fieldId + adminMark + inactiveMark + '.'
+            + emailPart + groupPart
+            + ' Используется аргументом, например: {{users(' + fieldId + ').name}}.';
+        } else if (entityKey === 'usersGroups') {
+          // ID группы (отдела). Возвращается через {{users(<id>).group_id}}
+          // и используется в фильтрах задач/сделок по ответственному.
+          insert = fieldId;
+          kind = 'idref';
+          desc = 'ID группы пользователей: ' + fieldId
+            + '. Возвращается через {{users(<id>).group_id}}; имя — через {{users(<id>).group_name}}.';
         } else {
           const root = entityKey === 'leads' ? 'lead' : entityKey === 'contacts' ? 'contact' : 'company';
           insert = '{{' + root + '.cf(' + fieldId + ')}}';
@@ -933,7 +1057,12 @@
         pipelineName: f.pipelineName || '',
         pipelineId: f.pipelineId != null ? String(f.pipelineId) : '',
         sort: f.sort || 0,
-        isMain: !!f.is_main
+        isMain: !!f.is_main,
+        groupId: f.groupId != null ? String(f.groupId) : '',
+        groupName: f.groupName || '',
+        email: f.email || '',
+        isAdmin: !!f.isAdmin,
+        isActive: f.isActive !== false
       });
     }
     const sys = window.F5VRParser.listSystemVars ? window.F5VRParser.listSystemVars() : [];
@@ -1000,8 +1129,9 @@
     let rowKindCls = ' is-cf';
     if (it.kind === 'system') rowKindCls = ' is-system';
     else if (it.kind === 'idref') rowKindCls = ' is-idref';
-    if (options.headerForPipeline) rowKindCls += ' is-pipeline-header';
-    if (options.statusChild) rowKindCls += ' is-status-child';
+    // Заголовок «родителя» (воронка / группа пользователей) и его «потомки».
+    if (options.headerForPipeline || options.headerForGroup) rowKindCls += ' is-pipeline-header';
+    if (options.statusChild || options.userChild) rowKindCls += ' is-status-child';
     row.className = 'f5ext-vars-row' + rowKindCls;
     row.dataset.insert = it.insert;
     row.dataset.canonical = it.canonical;
@@ -1011,6 +1141,13 @@
     if (options.headerForPipeline) {
       left.innerHTML = 'Воронка: <b>«' + escapeHtml(it.name) + '»</b>'
         + (it.isMain ? ' <span class="f5ext-vars-row-mainbadge">основная</span>' : '');
+    } else if (options.headerForGroup) {
+      left.innerHTML = 'Группа: <b>«' + escapeHtml(it.name) + '»</b>';
+    } else if (it.entityKey === 'users') {
+      let label = escapeHtml(it.name);
+      if (it.isAdmin) label += ' <span class="f5ext-vars-row-mainbadge">админ</span>';
+      if (it.isActive === false) label += ' <span class="f5ext-vars-row-mainbadge">неактивен</span>';
+      left.innerHTML = label;
     } else {
       left.textContent = it.name;
     }
@@ -1020,6 +1157,8 @@
       let entLabel = entityShortLabel(it.entityKey);
       if (options.showPipelineForStatus && it.entityKey === 'statuses' && it.pipelineName) {
         entLabel = 'Этап · ' + it.pipelineName;
+      } else if (options.showGroupForUser && it.entityKey === 'users' && it.groupName) {
+        entLabel = 'Польз. · ' + it.groupName;
       }
       right.innerHTML = '<span class="f5ext-vars-row-badge">ID</span>'
         + '<span class="f5ext-vars-row-ent">' + escapeHtml(entLabel) + '</span>';
@@ -1070,6 +1209,81 @@
     return shown;
   }
 
+  // Группированный рендер для вкладки «Пользователь»:
+  //   1) Системные переменные про пользователя сверху (kind=system) — плоско.
+  //   2) Группы пользователей как «родитель», их участники под каждой — как «потомки».
+  //   3) Юзеры без сматчившейся группы — отдельной секцией «Без группы».
+  function renderUsersGrouped(items, frag) {
+    const systemItems = [];
+    const groups = [];
+    const usersByGroup = {};
+    const orphanUsers = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.entityKey === 'usersGroups') {
+        groups.push(it);
+      } else if (it.entityKey === 'users') {
+        if (it.groupId) {
+          (usersByGroup[it.groupId] = usersByGroup[it.groupId] || []).push(it);
+        } else {
+          orphanUsers.push(it);
+        }
+      } else {
+        systemItems.push(it);
+      }
+    }
+
+    systemItems.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+    groups.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+    Object.keys(usersByGroup).forEach((gid) => {
+      usersByGroup[gid].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+    });
+    orphanUsers.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+
+    let shown = 0;
+    for (let i = 0; i < systemItems.length; i++) {
+      frag.appendChild(makeVarRow(systemItems[i]));
+      shown++;
+    }
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      frag.appendChild(makeVarRow(g, { headerForGroup: true }));
+      shown++;
+      const users = usersByGroup[g.fieldId] || [];
+      for (let j = 0; j < users.length; j++) {
+        frag.appendChild(makeVarRow(users[j], { userChild: true }));
+        shown++;
+      }
+      delete usersByGroup[g.fieldId];
+    }
+    // Юзеры с group_id, для которых группа не загружена.
+    const leftoverGroupIds = Object.keys(usersByGroup);
+    for (let i = 0; i < leftoverGroupIds.length; i++) {
+      const list = usersByGroup[leftoverGroupIds[i]] || [];
+      for (let j = 0; j < list.length; j++) {
+        frag.appendChild(makeVarRow(list[j], { showGroupForUser: true }));
+        shown++;
+      }
+    }
+    if (orphanUsers.length) {
+      // Разделитель «Без группы» использует тот же стиль заголовка-родителя,
+      // что и воронка/группа, — это некликабельный текст, поэтому собираем
+      // div вручную (а не через makeVarRow, которому нужен валидный insert).
+      const sep = document.createElement('div');
+      sep.className = 'f5ext-vars-row is-pipeline-header';
+      sep.innerHTML = '<div class="f5ext-vars-row-left">Без группы</div>'
+        + '<div class="f5ext-vars-row-right"></div>';
+      frag.appendChild(sep);
+      shown++;
+      for (let i = 0; i < orphanUsers.length; i++) {
+        frag.appendChild(makeVarRow(orphanUsers[i], { userChild: true }));
+        shown++;
+      }
+    }
+    return shown;
+  }
+
   function renderVarsList() {
     if (!elements.varsList) return;
     const q = (elements.varsSearch && elements.varsSearch.value || '').trim().toLowerCase();
@@ -1081,14 +1295,20 @@
     if (activeVarsGroup === 'pipeline' && !q) {
       const pipelineItems = items.filter((it) => groupOf(it.entityKey) === 'pipeline');
       shown = renderPipelinesGrouped(pipelineItems, frag);
+    } else if (activeVarsGroup === 'user' && !q) {
+      // Спец-режим: вкладка «Пользователь» без поиска — системные сверху
+      // плоско, ниже группы пользователей с участниками внутри.
+      const userItems = items.filter((it) => groupOf(it.entityKey) === 'user');
+      shown = renderUsersGrouped(userItems, frag);
     } else {
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         if (activeVarsGroup !== 'all' && groupOf(it.entityKey) !== activeVarsGroup) continue;
         const hay = ((it.name || '') + ' ' + (it.canonical || '') + ' '
-          + (it.desc || '') + ' ' + (it.pipelineName || '')).toLowerCase();
+          + (it.desc || '') + ' ' + (it.pipelineName || '') + ' '
+          + (it.groupName || '') + ' ' + (it.email || '')).toLowerCase();
         if (q && hay.indexOf(q) === -1) continue;
-        frag.appendChild(makeVarRow(it, { showPipelineForStatus: true }));
+        frag.appendChild(makeVarRow(it, { showPipelineForStatus: true, showGroupForUser: true }));
         shown++;
       }
     }
@@ -1121,6 +1341,13 @@
         + 'У воронок и этапов нет отдельной переменной — клик копирует <b>ID</b>. '
         + 'Используйте как аргумент, например: '
         + '<code>{{contact.leadsCount(id_воронки/id_этапа)}}</code>.';
+    } else if (activeVarsGroup === 'user') {
+      elements.varsHint.hidden = false;
+      elements.varsHint.innerHTML = ''
+        + 'У пользователей и групп нет отдельной переменной — клик копирует <b>ID</b>. '
+        + 'Используйте как аргумент, например: '
+        + '<code>{{users(id_пользователя).name}}</code>. '
+        + 'Список пользователей доступен только администраторам аккаунта.';
     } else {
       elements.varsHint.hidden = true;
       elements.varsHint.innerHTML = '';
@@ -1183,25 +1410,42 @@
   }
 
   function syncVarsHeight() {
-    if (!elements.vars || !elements.panel) return;
+    if (!elements.vars) return;
     if (varsUserSized) return;
-    const r = elements.panel.getBoundingClientRect();
-    elements.vars.style.height = Math.round(r.height) + 'px';
+    // Если расшифровщик открыт — подгоняем высоту под него; иначе — фиксированная.
+    const panelOpen = elements.panel && elements.panel.classList.contains('is-open');
+    if (panelOpen) {
+      const r = elements.panel.getBoundingClientRect();
+      if (r.height > 0) {
+        elements.vars.style.height = Math.round(r.height) + 'px';
+        return;
+      }
+    }
+    elements.vars.style.height = '420px';
   }
 
   function defaultVarsRect() {
-    const main = elements.panel.getBoundingClientRect();
     const w = 300;
     const gap = 8;
-    let x = Math.round(main.left - w - gap);
-    if (x < 8) x = 8;
-    const y = Math.round(main.top);
+    const panelOpen = elements.panel && elements.panel.classList.contains('is-open');
+    if (panelOpen) {
+      const main = elements.panel.getBoundingClientRect();
+      let x = Math.round(main.left - w - gap);
+      if (x < 8) x = 8;
+      return { x: x, y: Math.round(main.top), w: w };
+    }
+    // Расшифровщик закрыт — становимся в правый нижний угол, не закрывая лаунчер.
+    const launcherReserveX = 70;
+    const launcherReserveY = 70;
+    const x = Math.max(8, window.innerWidth - w - launcherReserveX);
+    const y = Math.max(8, window.innerHeight - 420 - launcherReserveY);
     return { x: x, y: y, w: w };
   }
 
   function openVarsPanel() {
     if (!elements.vars) return;
     elements.vars.classList.add('is-open');
+    bringToFront(elements.vars);
     getVarsState().then((s) => {
       const def = defaultVarsRect();
       const userSized = !!(s && s.userSized);
@@ -1224,12 +1468,14 @@
     });
     renderVars();
     saveVarsState({ open: true });
+    syncDockState();
     setTimeout(() => { try { elements.varsSearch.focus(); } catch (e) {} }, 0);
   }
   function closeVarsPanel() {
     if (!elements.vars) return;
     elements.vars.classList.remove('is-open');
     saveVarsState({ open: false });
+    syncDockState();
   }
   function toggleVarsPanel() {
     if (isVarsOpen()) closeVarsPanel();
@@ -1481,7 +1727,7 @@
         writeDict(dict).then(() => {
           state.fields = {};
           state.fetchedAt = 0;
-          state.counters = { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0 };
+          state.counters = { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0, users: 0, userGroups: 0 };
           state.errors = [];
           rebuildIdIndex();
           reRenderPreview();

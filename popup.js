@@ -83,7 +83,7 @@ async function refreshUi() {
   const { dict, settings } = await readStorage();
   const entry = dict[host];
   const total = entry && entry.fields ? Object.keys(entry.fields).length : 0;
-  const counters = (entry && entry.counters) || { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0 };
+  const counters = (entry && entry.counters) || { leads: 0, contacts: 0, companies: 0, catalogs: 0, pipelines: 0, statuses: 0, users: 0, userGroups: 0 };
   $('#total').textContent = String(total);
   $('#updated').textContent = entry ? fmtDate(entry.fetchedAt) : '—';
   $('#cnt-leads').textContent = String(counters.leads || 0);
@@ -92,6 +92,8 @@ async function refreshUi() {
   $('#cnt-catalogs').textContent = String(counters.catalogs || 0);
   $('#cnt-pipelines').textContent = String(counters.pipelines || 0);
   $('#cnt-statuses').textContent = String(counters.statuses || 0);
+  $('#cnt-users').textContent = String(counters.users || 0);
+  $('#cnt-userGroups').textContent = String(counters.userGroups || 0);
 
   const panelEnabled = settings.panelEnabled !== false;
   $('#toggle').textContent = 'Панель: ' + (panelEnabled ? 'вкл' : 'выкл');

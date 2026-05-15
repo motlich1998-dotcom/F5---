@@ -1,10 +1,15 @@
 /* ==== F5 — Расшифровка переменных: плавающая панель ==== */
 
-.f5ext-launcher {
+.f5ext-launcher-wrap {
   position: fixed;
   right: 14px;
   bottom: 14px;
   z-index: 2147483600;
+  width: 42px;
+  height: 42px;
+}
+.f5ext-launcher {
+  position: relative;
   width: 42px;
   height: 42px;
   border-radius: 12px;
@@ -22,6 +27,50 @@
 .f5ext-launcher:hover { transform: translateY(-1px); box-shadow: 0 14px 34px rgba(17, 24, 39, .32); }
 .f5ext-launcher.is-active { background: #111827; box-shadow: 0 14px 34px rgba(17, 24, 39, .35); }
 
+/* Hover-фартук над лаунчером с шорткатом «Шаблонизатор». Появляется на hover wrap'а
+   и не имеет зазора до самого лаунчера, чтобы курсор не «терял» dock. */
+.f5ext-launcher-dock {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease;
+}
+.f5ext-launcher-wrap.is-hover .f5ext-launcher-dock {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.f5ext-dock-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #fff;
+  color: #0b0f18;
+  border: 1px solid rgba(15, 23, 42, .14);
+  box-shadow: 0 10px 26px rgba(17, 24, 39, .18);
+  font: 700 14px/40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+  transition: background .12s ease, color .12s ease, transform .12s ease;
+}
+.f5ext-dock-btn:hover { transform: translateY(-1px); }
+.f5ext-dock-btn.is-active {
+  background: #0b0f18;
+  color: #fff;
+  border-color: #0b0f18;
+  box-shadow: 0 12px 30px rgba(17, 24, 39, .35);
+}
+
 .f5ext-panel {
   position: fixed;
   right: 14px;
@@ -33,6 +82,7 @@
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   color: #111827;
 }
+.f5ext-panel.is-front { z-index: 2147483605; }
 .f5ext-panel.is-open { display: block; }
 
 .f5ext-panel-shell {
@@ -101,6 +151,8 @@
   padding: 0;
 }
 .f5ext-btn-ic:hover { background: #f1f5f9; }
+.f5ext-btn-ic.is-active { background: #0b0f18; color: #fff; border-color: #0b0f18; }
+.f5ext-btn-ic.is-active:hover { background: #111827; }
 
 .f5ext-panel-body {
   flex: 1 1 auto;
@@ -280,7 +332,7 @@
 /* === панель «Шаблонизатор переменных» (список переменных аккаунта) === */
 .f5ext-vars {
   position: fixed;
-  z-index: 2147483602;
+  z-index: 2147483601;
   width: 300px;
   height: 420px;
   display: none;
@@ -288,6 +340,7 @@
   color: #111827;
 }
 .f5ext-vars.is-open { display: block; }
+.f5ext-vars.is-front { z-index: 2147483605; }
 .f5ext-vars-shell {
   position: relative;
   width: 100%;
