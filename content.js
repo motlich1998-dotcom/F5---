@@ -898,8 +898,8 @@
   // -------- Vars (templater) panel --------
   const MOD_PRESETS = [
     { value: '', label: '— без модификатора —' },
-    { value: 'df(d.m.Y)', label: ':df(d.m.Y) — дата' },
-    { value: 'df(d.m.Y H:i)', label: ':df(d.m.Y H:i) — дата+время' },
+    { value: 'df(d\\.m\\.Y)', label: ':df(d\\.m\\.Y) — дата' },
+    { value: 'df(d\\.m\\.Y H\\:i)', label: ':df(d\\.m\\.Y H\\:i) — дата+время' },
     { value: 'calc', label: ':calc — посчитать выражение' },
     { value: 'format(2)', label: ':format(2) — числа с разрядами' },
     { value: 'spell_price(rub, normal)', label: ':spell_price — сумма прописью' },

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>F5 — обновление расширения</title>
+  <link rel="stylesheet" href="update.css" />
+</head>
+<body>
+  <main class="up">
+    <header class="up-head">
+      <div class="up-title">F5 — обновление</div>
+      <div class="up-versions" id="versions">…</div>
+    </header>
+
+    <section class="up-card up-bind" id="bindCard" hidden>
+      <div class="up-card-title">Привяжите папку расширения</div>
+      <div class="up-card-text">
+        Чтобы расширение могло обновлять файлы автоматически, выберите папку, из
+        которой вы загрузили расширение в&nbsp;<code>chrome://extensions</code> —
+        ту самую, где лежит <code>manifest.json</code>. Это нужно сделать только один раз.
+      </div>
+      <button class="up-btn up-btn-primary" id="bindBtn">Выбрать папку расширения</button>
+      <div class="up-hint">
+        Браузер один раз спросит разрешение на чтение/запись в эту папку. После
+        каждого перезапуска Chrome полоска вверху экрана может появиться снова —
+        просто нажмите «Разрешить».
+      </div>
+    </section>
+
+    <section class="up-card up-progress" id="progressCard" hidden>
+      <div class="up-card-title">Обновление</div>
+      <ol class="up-steps" id="steps">
+        <li class="up-step" data-step="check"><span class="up-step-mark"></span><span class="up-step-label">Проверка папки расширения</span></li>
+        <li class="up-step" data-step="permission"><span class="up-step-mark"></span><span class="up-step-label">Разрешение на запись</span></li>
+        <li class="up-step" data-step="download"><span class="up-step-mark"></span><span class="up-step-label">Скачивание архива</span></li>
+        <li class="up-step" data-step="unzip"><span class="up-step-mark"></span><span class="up-step-label">Распаковка</span></li>
+        <li class="up-step" data-step="write"><span class="up-step-mark"></span><span class="up-step-label">Запись файлов</span></li>
+        <li class="up-step" data-step="reload"><span class="up-step-mark"></span><span class="up-step-label">Перезапуск расширения</span></li>
+      </ol>
+      <div class="up-status" id="status">Готовлю обновление…</div>
+      <div class="up-bar"><div class="up-bar-fill" id="bar"></div></div>
+    </section>
+
+    <section class="up-card up-done" id="doneCard" hidden>
+      <div class="up-card-title">Готово</div>
+      <div class="up-card-text" id="doneText">Расширение обновлено.</div>
+      <button class="up-btn up-btn-primary" id="closeBtn">Закрыть</button>
+    </section>
+
+    <section class="up-card up-error" id="errorCard" hidden>
+      <div class="up-card-title">Ошибка обновления</div>
+      <div class="up-card-text" id="errorText"></div>
+      <div class="up-row">
+        <button class="up-btn" id="retryBtn">Повторить</button>
+        <button class="up-btn" id="rebindBtn">Сменить папку</button>
+        <button class="up-btn" id="manualBtn">Скачать вручную</button>
+      </div>
+    </section>
+
+    <footer class="up-foot">
+      <a href="#" id="manualLink">Скачать ZIP вручную</a>
+      <span class="up-foot-sep">·</span>
+      <span id="apiNote">Источник: ветка <code>main</code> репозитория F5---</span>
+    </footer>
+  </main>
+
+  <script src="lib/fflate.js"></script>
+  <script src="update.js"></script>
+</body>
+</html>

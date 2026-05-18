@@ -12,6 +12,16 @@
       <div class="domain" id="domain">—</div>
     </div>
 
+    <div class="update-banner" id="update-banner" hidden>
+      <div class="ub-row">
+        <div class="ub-text">
+          Доступна версия <b id="ub-ver">—</b>
+          <span class="ub-sub" id="ub-sub">установлена v—</span>
+        </div>
+        <button class="btn primary ub-btn" id="ub-update">Обновить</button>
+      </div>
+    </div>
+
     <div class="hint" id="hint">
       Откройте amoCRM-аккаунт клиента и нажмите «Обновить словарь».
       Затем используйте плавающую панель F5 на странице, чтобы расшифровать переменные.
@@ -57,7 +67,12 @@
     <div class="foot">
       Запросы идут к API текущего аккаунта (cookie/session). В сеть наружу ничего не уходит.
     </div>
-    <div class="foot foot-ver">Версия <span id="ver-foot">—</span></div>
+    <div class="foot foot-ver">
+      Версия <span id="ver-foot">—</span>
+      <span class="foot-sep">·</span>
+      <a href="#" id="check-updates">Проверить обновления</a>
+      <span class="check-state" id="check-state"></span>
+    </div>
   </div>
   <script src="popup.js"></script>
 </body>

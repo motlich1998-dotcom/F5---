@@ -65,3 +65,24 @@ body {
 .domain-row .dr-cnt { color: #6b7280; }
 .foot { margin-top: 6px; color: #94a3b8; font-size: 11px; text-align: center; }
 .foot.foot-ver { margin-top: 2px; }
+.foot a { color: #475569; text-decoration: none; border-bottom: 1px dashed #cbd5e1; }
+.foot a:hover { color: #1f75fe; border-bottom-color: #1f75fe; }
+.foot .foot-sep { color: #cbd5e1; margin: 0 4px; }
+.foot .check-state { margin-left: 6px; color: #94a3b8; font-style: italic; }
+
+.update-banner {
+  background: #f0f7ff;
+  border: 1px solid #c7dcff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.update-banner .ub-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.update-banner .ub-text { flex: 1; font-size: 12px; line-height: 1.35; color: #1e3a8a; }
+.update-banner .ub-text b { font-weight: 800; color: #0f172a; }
+.update-banner .ub-sub {
+  display: block; color: #64748b; font-weight: 600; font-size: 11px; margin-top: 1px;
+}
+.update-banner .ub-btn { height: 28px; padding: 0 12px; font-size: 12px; }

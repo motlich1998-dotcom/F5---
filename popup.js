@@ -75,6 +75,70 @@ function setResult(msg, kind, errors) {
   if (kind) el.classList.add(kind);
 }
 
+function compareVersions(a, b) {
+  const pa = String(a || '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b || '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+async function syncUpdateBanner() {
+  const banner = $('#update-banner');
+  if (!banner) return;
+  const currentVersion = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+  let stored = null;
+  try {
+    const obj = await chrome.storage.local.get('update');
+    stored = obj && obj.update ? obj.update : null;
+  } catch (e) {}
+  if (!stored || !stored.availableVersion) {
+    banner.hidden = true;
+    return;
+  }
+  const newer = compareVersions(stored.availableVersion, currentVersion) > 0;
+  if (!newer) {
+    banner.hidden = true;
+    return;
+  }
+  $('#ub-ver').textContent = 'v' + stored.availableVersion;
+  $('#ub-sub').textContent = 'установлена v' + currentVersion;
+  banner.hidden = false;
+}
+
+function openUpdateWindow() {
+  const url = chrome.runtime.getURL('update.html');
+  chrome.windows.create({ url: url, type: 'popup', width: 480, height: 460 });
+  window.close();
+}
+
+let checkBusy = false;
+async function onCheckUpdates(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (checkBusy) return;
+  checkBusy = true;
+  const state = $('#check-state');
+  if (state) state.textContent = 'проверяю…';
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'F5VR_CHECK_UPDATES' });
+    await syncUpdateBanner();
+    if (state) {
+      if (res && res.error) state.textContent = 'ошибка проверки';
+      else if (res && res.hasUpdate) state.textContent = 'доступно ' + res.availableVersion;
+      else state.textContent = 'актуальная';
+    }
+  } catch (err) {
+    if (state) state.textContent = 'ошибка';
+  } finally {
+    checkBusy = false;
+    setTimeout(() => { if (state) state.textContent = ''; }, 4000);
+  }
+}
+
 async function refreshUi() {
   const tab = await getActiveTab();
   const host = tab ? hostnameFromUrl(tab.url || '') : '';
@@ -273,5 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#toggle').addEventListener('click', onToggle);
   $('#toggle-amma').addEventListener('click', onToggleAmma);
   $('#open-panel').addEventListener('click', onOpenPanel);
+  const ubBtn = $('#ub-update'); if (ubBtn) ubBtn.addEventListener('click', openUpdateWindow);
+  const checkLink = $('#check-updates'); if (checkLink) checkLink.addEventListener('click', onCheckUpdates);
   refreshUi();
+  syncUpdateBanner();
 });
