@@ -19,7 +19,8 @@
 
 const ALARM_NAME = 'f5vr-update-check';
 const CHECK_PERIOD_MINUTES = 12 * 60; // раз в 12 часов
-const MANIFEST_URL = 'https://raw.githubusercontent.com/motlich1998-dotcom/F5---/main/F5%20%D0%A0%D0%B0%D1%81%D1%88%D0%B8%D1%84%D1%80%D0%BE%D0%B2%D0%BA%D0%B0%20%D0%BF%D0%B5%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D0%BD%D1%8B%D1%85%20-%20%D1%80%D0%B0%D1%81%D1%88%D0%B8%D1%80%D0%B5%D0%BD%D0%B8%D0%B5/manifest.json';
+// Файлы расширения лежат в корне репозитория F5---, без подпапки.
+const MANIFEST_URL = 'https://raw.githubusercontent.com/motlich1998-dotcom/F5---/main/manifest.json';
 
 function parseVersion(v) {
   if (typeof v !== 'string') return [0, 0, 0];

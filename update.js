@@ -16,9 +16,6 @@ const REPO_OWNER = 'motlich1998-dotcom';
 const REPO_NAME = 'F5---';
 const BRANCH = 'main';
 const ZIP_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/zipball/${BRANCH}`;
-const MANIFEST_RAW = 'https://raw.githubusercontent.com/' + REPO_OWNER + '/' + REPO_NAME
-  + '/main/F5%20%D0%A0%D0%B0%D1%81%D1%88%D0%B8%D1%84%D1%80%D0%BE%D0%B2%D0%BA%D0%B0%20%D0%BF%D0%B5%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D0%BD%D1%8B%D1%85%20-%20%D1%80%D0%B0%D1%81%D1%88%D0%B8%D1%80%D0%B5%D0%BD%D0%B8%D0%B5/manifest.json';
-const EXT_FOLDER_NAME = 'F5 Расшифровка переменных - расширение';
 const RELEASE_PAGE = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 
 // -------- IndexedDB-хранилище для DirectoryHandle --------
@@ -246,18 +243,17 @@ async function writeFile(rootHandle, relPath, data) {
   await writable.close();
 }
 
-// Из полного пути в zipball'е (например, "motlich1998-dotcom-F5----abc1234/F5 Расшифровка.../manifest.json")
-// возвращает путь относительно папки расширения, либо null если файл вне неё.
+// Из полного пути в zipball'е (например, "motlich1998-dotcom-F5----abc1234/manifest.json")
+// возвращает путь относительно папки расширения. Файлы расширения лежат в корне
+// репо, поэтому отбрасываем только первый сегмент (имя верхней папки архива
+// GitHub: "<owner>-<repo>-<sha>"). Если файл — это сам корневой каталог архива,
+// возвращаем null.
 function relPathInsideExtension(fullPath) {
-  // Первый сегмент — имя верхней папки в архиве, всегда "<owner>-<repo>-<sha>".
   const parts = fullPath.split('/');
   if (parts.length < 2) return null;
   const rest = parts.slice(1).join('/');
-  const prefix = EXT_FOLDER_NAME + '/';
-  if (!rest.startsWith(prefix)) return null;
-  const inside = rest.slice(prefix.length);
-  if (!inside) return null;
-  return inside;
+  if (!rest) return null;
+  return rest;
 }
 
 // -------- Главный поток --------
@@ -335,7 +331,7 @@ async function runUpdate() {
   }
   if (!targets.length) {
     setStep('unzip', 'error');
-    showError('В архиве не нашлась папка «' + EXT_FOLDER_NAME + '». Возможно, она была переименована — обратитесь к разработчику.');
+    showError('Архив скачался, но внутри нет файлов. Возможно, GitHub отдал пустой ответ — попробуйте позже.');
     return;
   }
   setStep('unzip', 'done');
