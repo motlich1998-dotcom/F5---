@@ -4,6 +4,14 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 проект придерживается [семантического версионирования](https://semver.org/lang/ru/).
 
+## [1.3.2] — 2026-05-18
+
+### Fixed
+- Скрытие подсказок Аммы больше не белит всю страницу amoCRM: убраны
+  слишком широкие селекторы `div:has(.svg-amma_chat--cross-close-dims)`,
+  которые матчили корневой контейнер приложения. Оставлен только точный
+  `div:has(> div > button .svg-amma_chat--cross-close-dims)`.
+
 ## [1.3.1] — 2026-05-18
 
 ### Fixed
