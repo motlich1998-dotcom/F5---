@@ -400,10 +400,9 @@
     + 'button[aria-label*="Amma" i],'
     + 'a[aria-label*="Аммой" i],'
     + 'a[aria-label*="Amma" i],'
-    + 'div:has(> div > button .svg-amma_chat--cross-close-dims),'
-    + 'div:has(.svg-amma_chat--cross-close-dims),'
-    + 'div:has(use[href="#amma_chat--cross-close"]),'
-    + 'div:has(use[xlink\\:href="#amma_chat--cross-close"]) {'
+    // Только прямой контейнер подсказки (div > div > button > svg-крестик).
+    // Широкий div:has(.svg-...) матчит корень amoCRM и белит всю страницу.
+    + 'div:has(> div > button .svg-amma_chat--cross-close-dims) {'
     +   'display: none !important;'
     + '}';
 
