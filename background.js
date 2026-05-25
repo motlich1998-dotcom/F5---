@@ -9,7 +9,7 @@
  *
  * Хранится:
  *   chrome.storage.local["update"] = {
- *     availableVersion: "1.3.0",
+ *     availableVersion: "1.3.1",
  *     currentVersion:   "1.2.0",
  *     checkedAt:        <ms>,
  *     hasUpdate:        true | false,

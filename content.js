@@ -390,27 +390,30 @@
     else if (!state.panelEnabled) removeOrphanDom();
   }
 
-  // Скрытие/возврат кнопки «Открыть чат с Аммой» через CSS-инъекцию.
-  // Используются стабильные атрибуты (aria-label/alt/имя файла иконки), а не
-  // хешированные классы amoCRM. Применяется без MutationObserver — стилевое
-  // правило само распространяется на любые экземпляры кнопки на странице.
-  // Чтобы вернуть Амму после её скрытия — нужна перезагрузка вкладки только
-  // в случае, когда amoCRM держит её в memo-компоненте; обычно достаточно
-  // снять стиль (если у кнопки нет своих transition). На практике перезагрузка
-  // не требуется, но рекомендована — это стандартный путь для расширений-стилеров.
+  // Скрытие/возврат кнопки «Открыть чат с Аммой» и её всплывающих подсказок
+  // («С этой сделкой что-то не так…») через CSS-инъекцию. Стабильные маркеры —
+  // aria-label у кнопки лаунчера и svg-иконка amma_chat--cross-close у подсказок.
+  // Применяется без MutationObserver — правило само цепляет новые узлы в DOM.
   const AMMA_STYLE_ID = 'f5ext-amma-hide';
   const AMMA_HIDE_CSS = ''
     + 'button[aria-label*="Аммой" i],'
     + 'button[aria-label*="Amma" i],'
     + 'a[aria-label*="Аммой" i],'
-    + 'a[aria-label*="Amma" i] {'
+    + 'a[aria-label*="Amma" i],'
+    + 'div:has(> div > button .svg-amma_chat--cross-close-dims),'
+    + 'div:has(.svg-amma_chat--cross-close-dims),'
+    + 'div:has(use[href="#amma_chat--cross-close"]),'
+    + 'div:has(use[xlink\\:href="#amma_chat--cross-close"]) {'
     +   'display: none !important;'
     + '}';
 
   function applyAmmaHidden() {
     const existing = document.getElementById(AMMA_STYLE_ID);
     if (state.hideAmma) {
-      if (existing) return;
+      if (existing) {
+        existing.textContent = AMMA_HIDE_CSS;
+        return;
+      }
       const style = document.createElement('style');
       style.id = AMMA_STYLE_ID;
       style.textContent = AMMA_HIDE_CSS;

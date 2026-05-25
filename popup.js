@@ -162,10 +162,10 @@ async function refreshUi() {
   const panelEnabled = settings.panelEnabled !== false;
   $('#toggle').textContent = 'Панель: ' + (panelEnabled ? 'вкл' : 'выкл');
   const hideAmma = !!settings.hideAmma;
-  $('#toggle-amma').textContent = 'Кнопка Аммы: ' + (hideAmma ? 'скрыта' : 'показана');
+  $('#toggle-amma').textContent = 'Амма: ' + (hideAmma ? 'скрыта' : 'показана');
   $('#toggle-amma').title = hideAmma
-    ? 'Нажмите, чтобы вернуть кнопку «Открыть чат с Аммой» на странице амоCRM'
-    : 'Нажмите, чтобы скрыть кнопку «Открыть чат с Аммой» на страницах амоCRM';
+    ? 'Нажмите, чтобы вернуть кнопку Аммы и её подсказки на странице amoCRM'
+    : 'Нажмите, чтобы скрыть кнопку Аммы и её подсказки («С этой сделкой что-то не так…») на страницах amoCRM';
 
   const $refresh = $('#refresh');
   if (!isAmoHost(host)) {
@@ -292,9 +292,9 @@ async function onToggleAmma() {
     }
     if (cur) {
       // Убираем скрытие — Амма должна сразу появиться, перезагрузка не нужна.
-      setResult('Кнопка Аммы возвращена.', 'is-ok');
+      setResult('Амма возвращена (кнопка и подсказки).', 'is-ok');
     } else {
-      setResult('Кнопка Аммы скрыта на amoCRM-страницах.', 'is-ok');
+      setResult('Амма скрыта на amoCRM-страницах (кнопка и подсказки).', 'is-ok');
     }
   } finally {
     toggleAmmaBusy = false;
