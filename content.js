@@ -898,28 +898,6 @@
   }
 
   // -------- Vars (templater) panel --------
-  const MOD_PRESETS = [
-    { value: '', label: '— без модификатора —' },
-    { value: 'df(d\\.m\\.Y)', label: ':df(d\\.m\\.Y) — дата' },
-    { value: 'df(d\\.m\\.Y H\\:i)', label: ':df(d\\.m\\.Y H\\:i) — дата+время' },
-    { value: 'calc', label: ':calc — посчитать выражение' },
-    { value: 'format(2)', label: ':format(2) — числа с разрядами' },
-    { value: 'spell_price(rub, normal)', label: ':spell_price — сумма прописью' },
-    { value: 'spell_num', label: ':spell_num — число прописью' },
-    { value: 'noun_decl(2)', label: ':noun_decl(2) — склонение (Р.п.)' },
-    { value: 'fio', label: ':fio — ФИО' },
-    { value: 'fio_format(F i.o.)', label: ':fio_format(F i.o.) — Иванов И. И.' },
-    { value: 'upc', label: ':upc — ВЕРХНИЙ' },
-    { value: 'lwc', label: ':lwc — нижний' },
-    { value: 'ucf', label: ':ucf — Первая заглавная' },
-    { value: 'ucw', label: ':ucw — Каждое С Большой' },
-    { value: 'length', label: ':length — длина строки' },
-    { value: 'trim', label: ':trim — убрать пробелы' },
-    { value: 'split(,1)', label: ':split(,1) — N-й элемент' },
-    { value: 'ifempty(—)', label: ':ifempty(—) — если пусто' },
-    { value: 'translit', label: ':translit — транслит' },
-    { value: 'qr', label: ':qr — QR-код' }
-  ];
 
   function getVarsState() {
     return new Promise((resolve) => {
@@ -1365,13 +1343,25 @@
 
   function fillModSelect() {
     const sel = elements.varsModSel;
-    if (!sel) return;
+    if (!sel || !window.F5VRParser || !window.F5VRParser.listModifierPresets) return;
     sel.innerHTML = '';
-    for (let i = 0; i < MOD_PRESETS.length; i++) {
-      const o = document.createElement('option');
-      o.value = MOD_PRESETS[i].value;
-      o.textContent = MOD_PRESETS[i].label;
-      sel.appendChild(o);
+    const groups = window.F5VRParser.listModifierPresets();
+    for (let g = 0; g < groups.length; g++) {
+      const grp = groups[g];
+      const parent = grp.group
+        ? (function () {
+            const og = document.createElement('optgroup');
+            og.label = grp.group;
+            sel.appendChild(og);
+            return og;
+          })()
+        : sel;
+      for (let i = 0; i < grp.items.length; i++) {
+        const o = document.createElement('option');
+        o.value = grp.items[i].value;
+        o.textContent = grp.items[i].label;
+        parent.appendChild(o);
+      }
     }
   }
 
