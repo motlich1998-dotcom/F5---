@@ -109,10 +109,6 @@
   // -------- Cat Dance (промокод → подсказки Аммы) --------
   const FEATURE_CATDANCE = 'x7f3a';
   const CATDANCE_STYLE_ID = 'f5ext-catdance-style';
-  // Tenor post 4265892713740262408 — прямой GIF (embed.js на amoCRM блокируется CSP).
-  const CATDANCE_GIF_URL = ''
-    + String.fromCharCode(104, 116, 116, 112, 115, 58, 47, 47)
-    + 'media1.tenor.com/m/OzN-0kxqXAgAAAAC/cat.gif';
   let catDanceObserver = null;
   let catDanceScanTimer = null;
 
@@ -149,47 +145,142 @@
     if (!root) return;
     root.querySelectorAll('[data-f5-catdance-hidden]').forEach((el) => {
       el.style.removeProperty('display');
+      el.style.removeProperty('visibility');
+      el.style.removeProperty('position');
+      el.style.removeProperty('width');
+      el.style.removeProperty('height');
+      el.style.removeProperty('overflow');
+      el.style.removeProperty('margin');
+      el.style.removeProperty('padding');
       el.removeAttribute('data-f5-catdance-hidden');
     });
-    const media = root.querySelector('.f5ext-catdance-media');
-    if (media && media.parentNode) media.parentNode.removeChild(media);
+    root.querySelectorAll('.f5ext-catdance-close').forEach((el) => {
+      el.classList.remove('f5ext-catdance-close');
+    });
+    root.querySelectorAll('.f5ext-catdance-wrap').forEach((el) => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    root.querySelectorAll('.f5ext-catdance-media').forEach((media) => {
+      if (media.parentNode) media.parentNode.removeChild(media);
+    });
+    root.classList.remove('f5ext-catdance-root');
     root.removeAttribute('data-f5-catdance');
   }
 
-  function applyCatDanceToHint(root) {
-    if (!root || root.getAttribute('data-f5-catdance') === '1') return;
-    const closeBtn = root.querySelector('button .svg-amma_chat--cross-close-dims')?.closest('button');
-    root.querySelectorAll('*').forEach((el) => {
+  function cleanupOrphanCatDanceNodes() {
+    document.querySelectorAll('.f5ext-catdance-media').forEach((media) => {
+      if (!media.closest('[data-f5-catdance="1"]')) {
+        if (media.parentNode) media.parentNode.removeChild(media);
+      }
+    });
+    document.querySelectorAll('.f5ext-catdance-wrap').forEach((wrap) => {
+      if (!wrap.closest('[data-f5-catdance="1"]')) {
+        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      }
+    });
+    document.querySelectorAll('[data-f5-catdance-host]').forEach((el) => {
+      if (!el.closest('[data-f5-catdance="1"]')) {
+        el.classList.remove('f5ext-catdance-bubble');
+        el.removeAttribute('data-f5-catdance-host');
+      }
+    });
+  }
+
+  /** Блок с текстом комментария (фон «облачка»), не строка с крестиком. */
+  function findAmmaHintContentHost(root, closeBtn) {
+    const closeRow = closeBtn && closeBtn.parentElement;
+    let best = null;
+    Array.from(root.children).forEach((child) => {
+      if (child === closeRow) return;
+      if (child.classList.contains('f5ext-catdance-media')) return;
+      const text = (child.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      if (child.querySelector('button .svg-amma_chat--cross-close-dims')) return;
+      if (!best || text.length >= (best.textContent || '').replace(/\s+/g, ' ').trim().length) {
+        best = child;
+      }
+    });
+    if (best) return best;
+    return Array.from(root.children).find((child) => {
+      return child !== closeRow && !child.classList.contains('f5ext-catdance-media');
+    }) || root;
+  }
+
+  function hideTextInSubtree(container, closeBtn) {
+    if (!container || container === closeBtn || (closeBtn && closeBtn.contains(container))) return;
+    container.querySelectorAll('*').forEach((el) => {
       if (el.classList.contains('f5ext-catdance-media')) return;
+      if (el.classList.contains('f5ext-catdance-wrap')) return;
       if (el.closest('.f5ext-catdance-media')) return;
       if (isInCloseButtonSubtree(el, closeBtn)) return;
       const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
       if (!text) return;
       if (el.querySelector && el.querySelector('button .svg-amma_chat--cross-close-dims')) return;
-      el.style.setProperty('display', 'none', 'important');
       el.setAttribute('data-f5-catdance-hidden', '1');
+      el.style.setProperty('display', 'none', 'important');
     });
-    Array.from(root.childNodes).forEach((node) => {
-      if (node.nodeType !== 3) return;
-      if (!(node.textContent || '').trim()) return;
-      node.textContent = '';
+    Array.from(container.childNodes).forEach((node) => {
+      if (node.nodeType === 3 && (node.textContent || '').trim()) {
+        node.textContent = '';
+      }
     });
+  }
+
+  function getCatDanceGifUrl() {
+    if (window.F5VRExtras && window.F5VRExtras.getCatDanceGifUrl) {
+      return window.F5VRExtras.getCatDanceGifUrl(state.extras);
+    }
+    return (window.F5VRExtras && window.F5VRExtras.DEFAULT_CATDANCE_GIF_URL) || '';
+  }
+
+  function buildCatDanceMedia() {
     const media = document.createElement('div');
     media.className = 'f5ext-catdance-media';
     const img = document.createElement('img');
-    img.src = CATDANCE_GIF_URL;
+    img.src = getCatDanceGifUrl();
     img.alt = '';
     img.loading = 'eager';
     img.decoding = 'async';
     img.width = 240;
     img.height = 180;
     media.appendChild(img);
-    root.insertBefore(media, root.firstChild);
+    return media;
+  }
+
+  function applyCatDanceToHint(root) {
+    if (!root || root.getAttribute('data-f5-catdance') === '1') return;
+    const closeBtn = root.querySelector('button .svg-amma_chat--cross-close-dims')?.closest('button');
+    const closeRow = closeBtn && closeBtn.parentElement;
+    const contentHost = findAmmaHintContentHost(root, closeBtn);
+
+    hideTextInSubtree(contentHost, closeBtn);
+
+    let mediaParent = contentHost;
+    if (mediaParent === root || mediaParent === closeRow) {
+      let wrap = root.querySelector(':scope > .f5ext-catdance-wrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'f5ext-catdance-wrap';
+        root.insertBefore(wrap, closeRow || null);
+      }
+      mediaParent = wrap;
+    }
+
+    if (closeRow && root.contains(closeRow)) {
+      closeRow.classList.add('f5ext-catdance-close');
+    }
+
+    if (!mediaParent.querySelector('.f5ext-catdance-media')) {
+      mediaParent.appendChild(buildCatDanceMedia());
+    }
+
+    root.classList.add('f5ext-catdance-root');
     root.setAttribute('data-f5-catdance', '1');
   }
 
   function scanCatDanceHints() {
     if (!isCatDanceActive()) return;
+    cleanupOrphanCatDanceNodes();
     findAmmaHintRoots().forEach(applyCatDanceToHint);
   }
 
@@ -206,9 +297,11 @@
     const style = document.createElement('style');
     style.id = CATDANCE_STYLE_ID;
     style.textContent = ''
-      + '.f5ext-catdance-media{display:flex;justify-content:center;align-items:center;padding:4px 0 6px;}'
-      + '.f5ext-catdance-media img{display:block;max-width:min(360px,100%);height:auto;border-radius:8px;}'
-      + 'div[data-f5-catdance="1"]{overflow:visible!important;}';
+      + 'div.f5ext-catdance-root{position:relative!important;display:block!important;overflow:visible!important;}'
+      + '.f5ext-catdance-close{position:absolute!important;top:2px!important;right:2px!important;z-index:3!important;background:transparent!important;}'
+      + '.f5ext-catdance-wrap{display:block;width:100%;box-sizing:border-box;}'
+      + '.f5ext-catdance-media{display:flex;justify-content:center;align-items:center;padding:22px 10px 8px;width:100%;box-sizing:border-box;}'
+      + '.f5ext-catdance-media img{display:block;max-width:min(240px,100%);width:auto;height:auto;}';
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -230,10 +323,12 @@
 
   function revertAllCatDanceHints() {
     document.querySelectorAll('[data-f5-catdance="1"]').forEach(revertCatDanceHint);
+    cleanupOrphanCatDanceNodes();
   }
 
   function startCatDanceObserver() {
     stopCatDanceObserver();
+    cleanupOrphanCatDanceNodes();
     if (!document.body) return;
     ensureCatDanceStyle();
     scanCatDanceHints();
@@ -1881,7 +1976,9 @@
     }
     if (msg.type === 'F5VR_EXTRAS_CHANGED') {
       loadExtrasFromStorage().then(() => {
+        revertAllCatDanceHints();
         applyExtrasFeatures();
+        if (isCatDanceActive()) scanCatDanceHints();
         sendResponse({ ok: true });
       });
       return true;

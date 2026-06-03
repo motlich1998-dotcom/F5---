@@ -137,3 +137,26 @@ body {
 }
 .extras-empty[hidden], .extras-list:not(:empty) + .extras-empty { display: none; }
 .extras-list:empty + .extras-empty { display: block; }
+.extras-item-block {
+  border: 1px solid #eef1f4; border-radius: 8px; background: #fafbfc; overflow: hidden;
+}
+.extras-item-block + .extras-item-block { margin-top: 6px; }
+.extras-item-block .extras-item { border: none; border-radius: 0; background: transparent; }
+.extras-feature-settings {
+  padding: 0 10px 10px 36px; border-top: 1px solid #eef1f4; background: #fff;
+}
+.extras-settings-label {
+  font-size: 11px; font-weight: 700; color: #64748b; margin: 8px 0 4px;
+}
+.extras-gif-row { display: flex; gap: 6px; }
+.extras-gif-input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 8px;
+  border: 1px solid #dfe3e8; border-radius: 6px; font-size: 11px;
+}
+.extras-gif-input:focus {
+  outline: none; border-color: #1f75fe; box-shadow: 0 0 0 2px rgba(31,117,254,.12);
+}
+.extras-gif-row .btn { height: 30px; padding: 0 10px; font-size: 11px; flex-shrink: 0; }
+.extras-settings-hint {
+  margin-top: 6px; font-size: 10px; line-height: 1.35; color: #94a3b8;
+}

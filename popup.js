@@ -149,13 +149,23 @@ async function notifyExtrasChanged(tab) {
 function showView(name) {
   const main = $('#view-main');
   const extras = $('#view-extras');
+  const chromeBlocks = ['#hint', '.stats', '.counters', '#update-banner'];
   if (!main || !extras) return;
   if (name === 'extras') {
     main.hidden = true;
     extras.hidden = false;
+    chromeBlocks.forEach((sel) => {
+      const el = $(sel);
+      if (el) el.hidden = true;
+    });
   } else {
     main.hidden = false;
     extras.hidden = true;
+    chromeBlocks.forEach((sel) => {
+      const el = $(sel);
+      if (el && sel !== '#update-banner') el.hidden = false;
+    });
+    syncUpdateBanner();
   }
 }
 
@@ -174,9 +184,14 @@ async function renderExtrasList() {
   if (!listEl || !window.F5VRExtras) return;
   const extras = await window.F5VRExtras.readExtras();
   const items = window.F5VRExtras.listUnlockedFeatures(extras);
+  const catId = window.F5VRExtras.FEATURE_CATDANCE || 'x7f3a';
+  const savedGif = (extras.settings && extras.settings[catId] && extras.settings[catId].gifUrl) || '';
   listEl.innerHTML = '';
   if (emptyEl) emptyEl.hidden = items.length > 0;
   items.forEach((it) => {
+    const block = document.createElement('div');
+    block.className = 'extras-item-block';
+
     const row = document.createElement('label');
     row.className = 'extras-item';
     row.innerHTML = ''
@@ -186,8 +201,43 @@ async function renderExtrasList() {
       +   '<div class="extras-item-title">' + escapeHtml(it.title) + '</div>'
       +   (it.desc ? '<div class="extras-item-desc">' + escapeHtml(it.desc) + '</div>' : '')
       + '</div>';
-    listEl.appendChild(row);
+    block.appendChild(row);
+
+    if (it.id === catId) {
+      const settings = document.createElement('div');
+      settings.className = 'extras-feature-settings';
+      settings.innerHTML = ''
+        + '<div class="extras-settings-label">Ссылка на GIF (https)</div>'
+        + '<div class="extras-gif-row">'
+        +   '<input type="url" class="extras-gif-input" id="catdance-gif-url" '
+        +   'placeholder="https://…/file.gif" spellcheck="false" autocomplete="off" '
+        +   'value="' + escapeHtml(savedGif) + '" />'
+        +   '<button type="button" class="btn" id="catdance-gif-save">Сохранить</button>'
+        + '</div>'
+        + '<div class="extras-settings-hint">Прямая ссылка на файл (.gif, .webp, .png). '
+        + 'Пустое поле — GIF по умолчанию (кот).</div>';
+      block.appendChild(settings);
+    }
+
+    listEl.appendChild(block);
   });
+}
+
+async function onCatDanceGifSave() {
+  if (!window.F5VRExtras) return;
+  const input = $('#catdance-gif-url');
+  const raw = input ? input.value : '';
+  const catId = window.F5VRExtras.FEATURE_CATDANCE || 'x7f3a';
+  const normalized = window.F5VRExtras.normalizeGifUrl(raw);
+  if (raw.trim() && !normalized) {
+    setExtrasMsg('Нужна прямая https-ссылка на изображение.', 'is-err');
+    return;
+  }
+  await window.F5VRExtras.setFeatureSetting(catId, 'gifUrl', normalized);
+  if (input && !normalized) input.value = '';
+  setExtrasMsg(normalized ? 'GIF сохранена.' : 'Сброшено на GIF по умолчанию.', 'is-ok');
+  const tab = await getActiveTab();
+  await notifyExtrasChanged(tab);
 }
 
 function escapeHtml(s) {
@@ -458,7 +508,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   const extrasList = $('#extras-list');
-  if (extrasList) extrasList.addEventListener('change', onExtrasToggleChange);
+  if (extrasList) {
+    extrasList.addEventListener('change', onExtrasToggleChange);
+    extrasList.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t && t.id === 'catdance-gif-save') {
+        e.preventDefault();
+        onCatDanceGifSave();
+      }
+    });
+    extrasList.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target && e.target.id === 'catdance-gif-url') {
+        e.preventDefault();
+        onCatDanceGifSave();
+      }
+    });
+  }
   const ubBtn = $('#ub-update'); if (ubBtn) ubBtn.addEventListener('click', openUpdateWindow);
   const checkLink = $('#check-updates'); if (checkLink) checkLink.addEventListener('click', onCheckUpdates);
   refreshUi();
