@@ -21,6 +21,7 @@
     errors: [],
     panelEnabled: true,
     hideAmma: false,
+    extras: { unlocked: [], enabled: {} },
     idIndex: {}
   };
 
@@ -87,6 +88,167 @@
   }
   let activeVarsGroup = 'all';
   let varsUserSized = false;
+
+  async function loadExtrasFromStorage() {
+    if (window.F5VRExtras && window.F5VRExtras.readExtras) {
+      state.extras = await window.F5VRExtras.readExtras();
+    } else {
+      state.extras = { unlocked: [], enabled: {} };
+    }
+  }
+
+  function applyExtrasFeatures() {
+    if (!window.F5VRExtras || !window.F5VRExtras.applyEnabledFeatures) return;
+    window.F5VRExtras.applyEnabledFeatures(state.extras, {
+      onX7f3a: function (enabled) {
+        syncCatDance(enabled);
+      }
+    });
+  }
+
+  // -------- Cat Dance (промокод → подсказки Аммы) --------
+  const FEATURE_CATDANCE = 'x7f3a';
+  const CATDANCE_STYLE_ID = 'f5ext-catdance-style';
+  // Tenor post 4265892713740262408 — прямой GIF (embed.js на amoCRM блокируется CSP).
+  const CATDANCE_GIF_URL = ''
+    + String.fromCharCode(104, 116, 116, 112, 115, 58, 47, 47)
+    + 'media1.tenor.com/m/OzN-0kxqXAgAAAAC/cat.gif';
+  let catDanceObserver = null;
+  let catDanceScanTimer = null;
+
+  function isCatDanceActive() {
+    return !state.hideAmma
+      && window.F5VRExtras
+      && window.F5VRExtras.isFeatureEnabled(FEATURE_CATDANCE, state.extras);
+  }
+
+  function findAmmaHintRoots() {
+    const roots = [];
+    const seen = new Set();
+    document.querySelectorAll('.svg-amma_chat--cross-close-dims').forEach((svg) => {
+      const btn = svg.closest('button');
+      if (!btn) return;
+      const inner = btn.parentElement;
+      if (!inner || inner.tagName !== 'DIV') return;
+      const root = inner.parentElement;
+      if (!root || root.tagName !== 'DIV') return;
+      if (inner.querySelector('button') !== btn) return;
+      if (seen.has(root)) return;
+      seen.add(root);
+      roots.push(root);
+    });
+    return roots;
+  }
+
+  function isInCloseButtonSubtree(el, closeBtn) {
+    if (!closeBtn || !el) return false;
+    return el === closeBtn || closeBtn.contains(el) || el.contains(closeBtn);
+  }
+
+  function revertCatDanceHint(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-f5-catdance-hidden]').forEach((el) => {
+      el.style.removeProperty('display');
+      el.removeAttribute('data-f5-catdance-hidden');
+    });
+    const media = root.querySelector('.f5ext-catdance-media');
+    if (media && media.parentNode) media.parentNode.removeChild(media);
+    root.removeAttribute('data-f5-catdance');
+  }
+
+  function applyCatDanceToHint(root) {
+    if (!root || root.getAttribute('data-f5-catdance') === '1') return;
+    const closeBtn = root.querySelector('button .svg-amma_chat--cross-close-dims')?.closest('button');
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.classList.contains('f5ext-catdance-media')) return;
+      if (el.closest('.f5ext-catdance-media')) return;
+      if (isInCloseButtonSubtree(el, closeBtn)) return;
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      if (el.querySelector && el.querySelector('button .svg-amma_chat--cross-close-dims')) return;
+      el.style.setProperty('display', 'none', 'important');
+      el.setAttribute('data-f5-catdance-hidden', '1');
+    });
+    Array.from(root.childNodes).forEach((node) => {
+      if (node.nodeType !== 3) return;
+      if (!(node.textContent || '').trim()) return;
+      node.textContent = '';
+    });
+    const media = document.createElement('div');
+    media.className = 'f5ext-catdance-media';
+    const img = document.createElement('img');
+    img.src = CATDANCE_GIF_URL;
+    img.alt = '';
+    img.loading = 'eager';
+    img.decoding = 'async';
+    img.width = 240;
+    img.height = 180;
+    media.appendChild(img);
+    root.insertBefore(media, root.firstChild);
+    root.setAttribute('data-f5-catdance', '1');
+  }
+
+  function scanCatDanceHints() {
+    if (!isCatDanceActive()) return;
+    findAmmaHintRoots().forEach(applyCatDanceToHint);
+  }
+
+  function scheduleCatDanceScan() {
+    if (catDanceScanTimer) clearTimeout(catDanceScanTimer);
+    catDanceScanTimer = setTimeout(() => {
+      catDanceScanTimer = null;
+      scanCatDanceHints();
+    }, 80);
+  }
+
+  function ensureCatDanceStyle() {
+    if (document.getElementById(CATDANCE_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = CATDANCE_STYLE_ID;
+    style.textContent = ''
+      + '.f5ext-catdance-media{display:flex;justify-content:center;align-items:center;padding:4px 0 6px;}'
+      + '.f5ext-catdance-media img{display:block;max-width:min(360px,100%);height:auto;border-radius:8px;}'
+      + 'div[data-f5-catdance="1"]{overflow:visible!important;}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function removeCatDanceStyle() {
+    const el = document.getElementById(CATDANCE_STYLE_ID);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function stopCatDanceObserver() {
+    if (catDanceObserver) {
+      catDanceObserver.disconnect();
+      catDanceObserver = null;
+    }
+    if (catDanceScanTimer) {
+      clearTimeout(catDanceScanTimer);
+      catDanceScanTimer = null;
+    }
+  }
+
+  function revertAllCatDanceHints() {
+    document.querySelectorAll('[data-f5-catdance="1"]').forEach(revertCatDanceHint);
+  }
+
+  function startCatDanceObserver() {
+    stopCatDanceObserver();
+    if (!document.body) return;
+    ensureCatDanceStyle();
+    scanCatDanceHints();
+    catDanceObserver = new MutationObserver(() => scheduleCatDanceScan());
+    catDanceObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function syncCatDance(_featureEnabled) {
+    if (isCatDanceActive()) startCatDanceObserver();
+    else {
+      stopCatDanceObserver();
+      revertAllCatDanceHints();
+      removeCatDanceStyle();
+    }
+  }
 
   // -------- Storage --------
   function readStorage() {
@@ -420,6 +582,7 @@
     } else if (existing && existing.parentNode) {
       existing.parentNode.removeChild(existing);
     }
+    syncCatDance();
   }
 
   function setStatus(msg, kind) {
@@ -1685,6 +1848,9 @@
         if (isVarsOpen()) renderVars();
       });
     }
+    if (window.F5VRExtras && changes[window.F5VRExtras.STORAGE_EXTRAS_KEY]) {
+      loadExtrasFromStorage().then(() => applyExtrasFeatures());
+    }
   });
 
   // -------- Messaging --------
@@ -1713,6 +1879,13 @@
       sendResponse({ ok: true });
       return false;
     }
+    if (msg.type === 'F5VR_EXTRAS_CHANGED') {
+      loadExtrasFromStorage().then(() => {
+        applyExtrasFeatures();
+        sendResponse({ ok: true });
+      });
+      return true;
+    }
     if (msg.type === 'F5VR_CLEAR_HOST') {
       readStorage().then(({ dict }) => {
         delete dict[HOST];
@@ -1738,9 +1911,10 @@
       document.addEventListener('DOMContentLoaded', init, { once: true });
       return;
     }
-    loadStateFromStorage().then(() => {
+    loadStateFromStorage().then(() => loadExtrasFromStorage()).then(() => {
       applyPanelEnabled();
       applyAmmaHidden();
+      applyExtrasFeatures();
       const stale = !state.fetchedAt || (Date.now() - state.fetchedAt) > TTL_MS;
       if (stale) setTimeout(() => { refreshDictionary(); }, 1500);
     });

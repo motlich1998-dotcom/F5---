@@ -49,24 +49,46 @@
       <div class="cnt"><span class="cnt-k">Группы</span><span class="cnt-v" id="cnt-userGroups">0</span></div>
     </div>
 
-    <div class="actions">
-      <button class="btn primary" id="refresh">Обновить словарь</button>
-      <button class="btn" id="open-panel">Открыть панель</button>
-      <button class="btn" id="toggle">Панель: вкл</button>
-      <button class="btn" id="toggle-amma">Амма: показана</button>
-      <button class="btn ghost" id="clear">Очистить домен</button>
+    <div id="view-main">
+      <div class="actions">
+        <button class="btn primary" id="refresh">Обновить словарь</button>
+        <button class="btn" id="open-panel">Открыть панель</button>
+        <button class="btn" id="toggle">Панель: вкл</button>
+        <button class="btn" id="toggle-amma">Амма: показана</button>
+        <button class="btn" id="open-extras">Доп. функции</button>
+        <button class="btn ghost" id="clear">Очистить домен</button>
+      </div>
+
+      <div class="result" id="result"></div>
+
+      <details class="adv">
+        <summary>Все домены в хранилище</summary>
+        <div id="domains" class="domains"></div>
+      </details>
+
+      <div class="foot">
+        Запросы идут к API текущего аккаунта (cookie/session). В сеть наружу ничего не уходит.
+      </div>
     </div>
 
-    <div class="result" id="result"></div>
-
-    <details class="adv">
-      <summary>Все домены в хранилище</summary>
-      <div id="domains" class="domains"></div>
-    </details>
-
-    <div class="foot">
-      Запросы идут к API текущего аккаунта (cookie/session). В сеть наружу ничего не уходит.
+    <div id="view-extras" class="view-extras" hidden>
+      <div class="extras-top">
+        <button type="button" class="btn extras-back" id="extras-back">← Назад</button>
+        <div class="extras-title">Доп. функции</div>
+      </div>
+      <p class="extras-lead">Введите промокод, чтобы открыть скрытые возможности. После разблокировки функция останется в этом списке.</p>
+      <div class="extras-promo">
+        <input type="text" class="extras-input" id="promo-input" placeholder="Промокод" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn primary" id="promo-apply">Применить</button>
+      </div>
+      <div class="extras-msg" id="extras-msg" hidden></div>
+      <div class="extras-list-wrap">
+        <div class="extras-list-head">Ваши функции</div>
+        <div class="extras-list" id="extras-list"></div>
+        <div class="extras-empty" id="extras-empty">Пока нет разблокированных функций.</div>
+      </div>
     </div>
+
     <div class="foot foot-ver">
       Версия <span id="ver-foot">—</span>
       <span class="foot-sep">·</span>
@@ -74,6 +96,7 @@
       <span class="check-state" id="check-state"></span>
     </div>
   </div>
+  <script src="lib/extras.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

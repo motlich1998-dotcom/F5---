@@ -86,3 +86,54 @@ body {
   display: block; color: #64748b; font-weight: 600; font-size: 11px; margin-top: 1px;
 }
 .update-banner .ub-btn { height: 28px; padding: 0 12px; font-size: 12px; }
+
+.view-extras { margin-top: 2px; }
+.extras-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.extras-back {
+  height: 28px; padding: 0 10px; font-size: 12px; flex-shrink: 0;
+}
+.extras-title { font-weight: 800; font-size: 14px; color: #111827; }
+.extras-lead {
+  margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: #475569;
+}
+.extras-promo {
+  display: flex; gap: 6px; margin-bottom: 8px;
+}
+.extras-input {
+  flex: 1; min-width: 0; height: 32px; padding: 0 10px;
+  border: 1px solid #dfe3e8; border-radius: 8px; font-size: 12.5px;
+  font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+.extras-input:focus {
+  outline: none; border-color: #1f75fe; box-shadow: 0 0 0 2px rgba(31,117,254,.15);
+}
+.extras-msg {
+  font-size: 12px; line-height: 1.35; margin-bottom: 8px; padding: 6px 8px;
+  border-radius: 6px;
+}
+.extras-msg.is-ok { color: #027a48; background: #ecfdf3; border: 1px solid #abefc6; }
+.extras-msg.is-err { color: #b42318; background: #fff1f3; border: 1px solid #fecdd6; }
+.extras-msg.is-info { color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; }
+.extras-list-wrap { margin-top: 4px; }
+.extras-list-head {
+  font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 6px;
+}
+.extras-list { display: flex; flex-direction: column; gap: 6px; }
+.extras-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 10px; border: 1px solid #eef1f4; border-radius: 8px; background: #fafbfc;
+}
+.extras-item-label { flex: 1; min-width: 0; }
+.extras-item-title { font-weight: 800; font-size: 12.5px; color: #111827; }
+.extras-item-desc { font-size: 11px; color: #64748b; margin-top: 2px; line-height: 1.35; }
+.extras-toggle {
+  flex-shrink: 0; margin-top: 2px; cursor: pointer; accent-color: #1f75fe;
+}
+.extras-empty {
+  font-size: 12px; color: #94a3b8; padding: 8px 2px;
+}
+.extras-empty[hidden], .extras-list:not(:empty) + .extras-empty { display: none; }
+.extras-list:empty + .extras-empty { display: block; }

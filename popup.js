@@ -47,7 +47,7 @@ async function ensureContentScript(tabId) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['lib/parser.js', 'lib/api.js', 'content.js']
+        files: ['lib/parser.js', 'lib/api.js', 'lib/extras.js', 'content.js']
       });
       await chrome.scripting.insertCSS({
         target: { tabId },
@@ -137,6 +137,117 @@ async function onCheckUpdates(e) {
     checkBusy = false;
     setTimeout(() => { if (state) state.textContent = ''; }, 4000);
   }
+}
+
+async function notifyExtrasChanged(tab) {
+  if (!tab || !tab.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'F5VR_EXTRAS_CHANGED' });
+  } catch (e) { /* noop */ }
+}
+
+function showView(name) {
+  const main = $('#view-main');
+  const extras = $('#view-extras');
+  if (!main || !extras) return;
+  if (name === 'extras') {
+    main.hidden = true;
+    extras.hidden = false;
+  } else {
+    main.hidden = false;
+    extras.hidden = true;
+  }
+}
+
+function setExtrasMsg(text, kind) {
+  const el = $('#extras-msg');
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.remove('is-ok', 'is-err', 'is-info');
+  if (kind) el.classList.add(kind);
+}
+
+async function renderExtrasList() {
+  const listEl = $('#extras-list');
+  const emptyEl = $('#extras-empty');
+  if (!listEl || !window.F5VRExtras) return;
+  const extras = await window.F5VRExtras.readExtras();
+  const items = window.F5VRExtras.listUnlockedFeatures(extras);
+  listEl.innerHTML = '';
+  if (emptyEl) emptyEl.hidden = items.length > 0;
+  items.forEach((it) => {
+    const row = document.createElement('label');
+    row.className = 'extras-item';
+    row.innerHTML = ''
+      + '<input type="checkbox" class="extras-toggle" data-feature-id="' + it.id + '"'
+      + (it.enabled ? ' checked' : '') + ' />'
+      + '<div class="extras-item-label">'
+      +   '<div class="extras-item-title">' + escapeHtml(it.title) + '</div>'
+      +   (it.desc ? '<div class="extras-item-desc">' + escapeHtml(it.desc) + '</div>' : '')
+      + '</div>';
+    listEl.appendChild(row);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function onOpenExtras() {
+  showView('extras');
+  setExtrasMsg('', '');
+  const input = $('#promo-input');
+  if (input) { input.value = ''; input.focus(); }
+  await renderExtrasList();
+}
+
+function onExtrasBack() {
+  showView('main');
+  setExtrasMsg('', '');
+}
+
+let promoBusy = false;
+async function onPromoApply() {
+  if (promoBusy || !window.F5VRExtras) return;
+  promoBusy = true;
+  const btn = $('#promo-apply');
+  if (btn) btn.disabled = true;
+  try {
+    const input = $('#promo-input');
+    const code = input ? input.value : '';
+    const res = await window.F5VRExtras.redeemPromo(code);
+    if (res.status === 'empty') {
+      setExtrasMsg('Введите промокод.', 'is-err');
+    } else if (res.status === 'unknown') {
+      setExtrasMsg('Промокод не найден.', 'is-err');
+    } else if (res.status === 'already') {
+      setExtrasMsg('Эти функции уже разблокированы.', 'is-info');
+    } else if (res.status === 'ok') {
+      setExtrasMsg('Разблокировано! Новые функции добавлены в список ниже.', 'is-ok');
+      if (input) input.value = '';
+    }
+    await renderExtrasList();
+    const tab = await getActiveTab();
+    await notifyExtrasChanged(tab);
+  } finally {
+    promoBusy = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function onExtrasToggleChange(e) {
+  const t = e.target;
+  if (!t || !t.classList || !t.classList.contains('extras-toggle')) return;
+  const id = t.getAttribute('data-feature-id');
+  if (!id || !window.F5VRExtras) return;
+  await window.F5VRExtras.setFeatureEnabled(id, t.checked);
+  const tab = await getActiveTab();
+  await notifyExtrasChanged(tab);
 }
 
 async function refreshUi() {
@@ -337,6 +448,17 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#toggle').addEventListener('click', onToggle);
   $('#toggle-amma').addEventListener('click', onToggleAmma);
   $('#open-panel').addEventListener('click', onOpenPanel);
+  $('#open-extras').addEventListener('click', onOpenExtras);
+  $('#extras-back').addEventListener('click', onExtrasBack);
+  $('#promo-apply').addEventListener('click', onPromoApply);
+  const promoInput = $('#promo-input');
+  if (promoInput) {
+    promoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); onPromoApply(); }
+    });
+  }
+  const extrasList = $('#extras-list');
+  if (extrasList) extrasList.addEventListener('change', onExtrasToggleChange);
   const ubBtn = $('#ub-update'); if (ubBtn) ubBtn.addEventListener('click', openUpdateWindow);
   const checkLink = $('#check-updates'); if (checkLink) checkLink.addEventListener('click', onCheckUpdates);
   refreshUi();
