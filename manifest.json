@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "F5 — расшифровка переменных (amoCRM)",
-  "version": "1.3.5",
+  "version": "1.3.8",
   "description": "Плавающая панель для расшифровки переменных amoCRM/Kommo. Тянет custom_fields из API текущего аккаунта по cookie-сессии и показывает имя/тип поля по клику.",
   "permissions": ["storage", "activeTab", "scripting", "alarms"],
   "host_permissions": [
@@ -38,7 +38,7 @@
         "https://*.amocrm.com/*",
         "https://*.kommo.com/*"
       ],
-      "js": ["lib/parser.js", "lib/api.js", "lib/extras.js", "content.js"],
+      "js": ["lib/parser.js", "lib/api.js", "lib/extras.js", "lib/minesweeper.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle",
       "all_frames": false

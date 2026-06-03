@@ -185,7 +185,11 @@ async function renderExtrasList() {
   const extras = await window.F5VRExtras.readExtras();
   const items = window.F5VRExtras.listUnlockedFeatures(extras);
   const catId = window.F5VRExtras.FEATURE_CATDANCE || 'x7f3a';
+  const msId = window.F5VRExtras.FEATURE_MINESWEEPER || 'm9k2';
   const savedGif = (extras.settings && extras.settings[catId] && extras.settings[catId].gifUrl) || '';
+  const savedBoard = window.F5VRExtras.getMinesweeperBoardSize
+    ? window.F5VRExtras.getMinesweeperBoardSize(extras)
+    : '16';
   listEl.innerHTML = '';
   if (emptyEl) emptyEl.hidden = items.length > 0;
   items.forEach((it) => {
@@ -219,8 +223,37 @@ async function renderExtrasList() {
       block.appendChild(settings);
     }
 
+    if (it.id === msId) {
+      const settings = document.createElement('div');
+      settings.className = 'extras-feature-settings';
+      settings.innerHTML = ''
+        + '<div class="extras-settings-label">Размер поля</div>'
+        + '<div class="extras-gif-row">'
+        +   '<select class="extras-ms-size" id="ms-board-size">'
+        +     '<option value="16"' + (savedBoard === '16' ? ' selected' : '') + '>16×16 (40 мин)</option>'
+        +     '<option value="32"' + (savedBoard === '32' ? ' selected' : '') + '>32×32 (160 мин)</option>'
+        +     '<option value="64"' + (savedBoard === '64' ? ' selected' : '') + '>64×64 (640 мин)</option>'
+        +   '</select>'
+        +   '<button type="button" class="btn" id="ms-board-save">Сохранить</button>'
+        + '</div>';
+      block.appendChild(settings);
+    }
+
     listEl.appendChild(block);
   });
+}
+
+async function onMsBoardSave() {
+  if (!window.F5VRExtras) return;
+  const sel = $('#ms-board-size');
+  const msId = window.F5VRExtras.FEATURE_MINESWEEPER || 'm9k2';
+  const size = window.F5VRExtras.normalizeBoardSize
+    ? window.F5VRExtras.normalizeBoardSize(sel ? sel.value : '16')
+    : '16';
+  await window.F5VRExtras.setFeatureSetting(msId, 'boardSize', size);
+  setExtrasMsg('Размер поля сохранён.', 'is-ok');
+  const tab = await getActiveTab();
+  await notifyExtrasChanged(tab);
 }
 
 async function onCatDanceGifSave() {
@@ -272,9 +305,9 @@ async function onPromoApply() {
     const code = input ? input.value : '';
     const res = await window.F5VRExtras.redeemPromo(code);
     if (res.status === 'empty') {
-      setExtrasMsg('Введите промокод.', 'is-err');
+      setExtrasMsg('Введите код доступа.', 'is-err');
     } else if (res.status === 'unknown') {
-      setExtrasMsg('Промокод не найден.', 'is-err');
+      setExtrasMsg('Код не найден.', 'is-err');
     } else if (res.status === 'already') {
       setExtrasMsg('Эти функции уже разблокированы.', 'is-info');
     } else if (res.status === 'ok') {
@@ -515,6 +548,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (t && t.id === 'catdance-gif-save') {
         e.preventDefault();
         onCatDanceGifSave();
+      }
+      if (t && t.id === 'ms-board-save') {
+        e.preventDefault();
+        onMsBoardSave();
       }
     });
     extrasList.addEventListener('keydown', (e) => {

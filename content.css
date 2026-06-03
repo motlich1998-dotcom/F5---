@@ -607,3 +607,125 @@
   color: #e2e8f0;
 }
 .f5ext-tt-foot { color: #94a3b8; font-size: 11px; margin-top: 4px; }
+
+/* ==== Сапёр (доп. функция) ==== */
+.f5ext-dock-ms { font-size: 18px; line-height: 40px; }
+.f5ext-dock-ms[hidden] { display: none !important; }
+
+.f5ext-ms {
+  position: fixed;
+  z-index: 2147483602;
+  display: none;
+  width: 420px;
+  max-width: min(96vw, 680px);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #111827;
+}
+.f5ext-ms.is-open { display: block; }
+.f5ext-ms.is-front { z-index: 2147483605; }
+
+.f5ext-ms-shell {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .22), 0 2px 6px rgba(15, 23, 42, .08);
+  border: 1px solid rgba(15, 23, 42, .08);
+  overflow: hidden;
+}
+.f5ext-ms-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+  cursor: move;
+  user-select: none;
+}
+.f5ext-ms-title { font-weight: 800; font-size: 13px; }
+.f5ext-ms-body {
+  padding: 10px 12px 14px;
+  overflow: auto;
+  max-height: min(72vh, 680px);
+}
+
+.f5ext-ms-game { display: flex; flex-direction: column; gap: 10px; }
+.f5ext-ms-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.f5ext-ms-size-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+.f5ext-ms-size {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #111827;
+  cursor: pointer;
+}
+.f5ext-ms-status {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font: inherit;
+  cursor: default;
+}
+.f5ext-ms-status.is-restart { cursor: pointer; background: #eff6ff; border-color: #bfdbfe; }
+.f5ext-ms-status.is-restart:hover { background: #dbeafe; }
+
+.f5ext-ms-grid {
+  display: grid;
+  gap: 0;
+  width: max-content;
+  border: 2px solid #64748b;
+  background: #cbd5e1;
+  user-select: none;
+}
+.f5ext-ms-cell {
+  width: var(--ms-cell, 24px);
+  height: var(--ms-cell, 24px);
+  padding: 0;
+  margin: 0;
+  border: 1px solid #94a3b8;
+  box-sizing: border-box;
+  font: 800 var(--ms-font, 14px)/calc(var(--ms-cell, 24px) - 2px) ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+  background: #c0c0c0;
+  box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #808080;
+}
+.f5ext-ms-cell.is-flag,
+.f5ext-ms-cell.is-question,
+.f5ext-ms-cell.is-mine {
+  font-size: calc(var(--ms-font, 14px) + 2px);
+  line-height: calc(var(--ms-cell, 24px) - 2px);
+}
+.f5ext-ms-cell.is-hidden:active { box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff; }
+.f5ext-ms-cell.is-open,
+.f5ext-ms-cell.is-n0 { background: #d8d8d8; box-shadow: none; cursor: default; }
+.f5ext-ms-cell.is-flag,
+.f5ext-ms-cell.is-question { background: #c0c0c0; }
+.f5ext-ms-cell.is-mine { background: #fecaca; }
+.f5ext-ms-cell.is-misplaced { background: #fee2e2; color: #dc2626; }
+.f5ext-ms-cell.is-n1 { color: #1d4ed8; }
+.f5ext-ms-cell.is-n2 { color: #15803d; }
+.f5ext-ms-cell.is-n3 { color: #dc2626; }
+.f5ext-ms-cell.is-n4 { color: #1e3a8a; }
+.f5ext-ms-cell.is-n5 { color: #7f1d1d; }
+.f5ext-ms-cell.is-n6 { color: #0e7490; }
+.f5ext-ms-cell.is-n7 { color: #111827; }
+.f5ext-ms-cell.is-n8 { color: #64748b; }

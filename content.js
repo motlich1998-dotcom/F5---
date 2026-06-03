@@ -80,10 +80,11 @@
   let elements = createEmptyElements();
   function createEmptyElements() {
     return {
-      btn: null, launcherWrap: null, dockBtn: null,
+      btn: null, launcherWrap: null, launcherDock: null, dockBtn: null, msDockBtn: null,
       panel: null, input: null, preview: null,
       modPanel: null, status: null, tip: null,
-      vars: null, varsList: null, varsSearch: null, varsModSel: null, varsTabs: null, varsHint: null
+      vars: null, varsList: null, varsSearch: null, varsModSel: null, varsTabs: null, varsHint: null,
+      ms: null, msMount: null
     };
   }
   let activeVarsGroup = 'all';
@@ -93,29 +94,33 @@
     if (window.F5VRExtras && window.F5VRExtras.readExtras) {
       state.extras = await window.F5VRExtras.readExtras();
     } else {
-      state.extras = { unlocked: [], enabled: {} };
+      state.extras = { unlocked: [], enabled: {}, settings: {} };
     }
   }
 
   function applyExtrasFeatures() {
     if (!window.F5VRExtras || !window.F5VRExtras.applyEnabledFeatures) return;
     window.F5VRExtras.applyEnabledFeatures(state.extras, {
-      onX7f3a: function (enabled) {
-        syncCatDance(enabled);
+      onCatDance: function () {
+        syncCatDance();
+      },
+      onMinesweeper: function () {
+        syncMinesweeper();
       }
     });
   }
 
-  // -------- Cat Dance (промокод → подсказки Аммы) --------
-  const FEATURE_CATDANCE = 'x7f3a';
+  // -------- Cat Dance (доп. функция → подсказки Аммы) --------
   const CATDANCE_STYLE_ID = 'f5ext-catdance-style';
   let catDanceObserver = null;
   let catDanceScanTimer = null;
 
   function isCatDanceActive() {
+    const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_CATDANCE;
     return !state.hideAmma
       && window.F5VRExtras
-      && window.F5VRExtras.isFeatureEnabled(FEATURE_CATDANCE, state.extras);
+      && featureId
+      && window.F5VRExtras.isFeatureEnabled(featureId, state.extras);
   }
 
   function findAmmaHintRoots() {
@@ -141,21 +146,28 @@
     return el === closeBtn || closeBtn.contains(el) || el.contains(closeBtn);
   }
 
+  function pickBorderRadius(el) {
+    if (!el || !window.getComputedStyle) return '';
+    const radius = window.getComputedStyle(el).borderRadius;
+    return radius && radius !== '0px' ? radius : '';
+  }
+
+  function syncCatDanceBubbleRadius(root, bubbleEl) {
+    const radius = pickBorderRadius(bubbleEl) || pickBorderRadius(root) || pickBorderRadius(root && root.parentElement) || '12px';
+    root.style.setProperty('--f5-cd-radius', radius);
+  }
+
   function revertCatDanceHint(root) {
     if (!root) return;
     root.querySelectorAll('[data-f5-catdance-hidden]').forEach((el) => {
       el.style.removeProperty('display');
-      el.style.removeProperty('visibility');
-      el.style.removeProperty('position');
-      el.style.removeProperty('width');
-      el.style.removeProperty('height');
-      el.style.removeProperty('overflow');
-      el.style.removeProperty('margin');
-      el.style.removeProperty('padding');
       el.removeAttribute('data-f5-catdance-hidden');
     });
     root.querySelectorAll('.f5ext-catdance-close').forEach((el) => {
       el.classList.remove('f5ext-catdance-close');
+    });
+    root.querySelectorAll('.f5ext-catdance-bubble').forEach((el) => {
+      el.classList.remove('f5ext-catdance-bubble');
     });
     root.querySelectorAll('.f5ext-catdance-wrap').forEach((el) => {
       if (el.parentNode) el.parentNode.removeChild(el);
@@ -165,6 +177,7 @@
     });
     root.classList.remove('f5ext-catdance-root');
     root.removeAttribute('data-f5-catdance');
+    root.style.removeProperty('--f5-cd-radius');
   }
 
   function cleanupOrphanCatDanceNodes() {
@@ -176,12 +189,6 @@
     document.querySelectorAll('.f5ext-catdance-wrap').forEach((wrap) => {
       if (!wrap.closest('[data-f5-catdance="1"]')) {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-      }
-    });
-    document.querySelectorAll('[data-f5-catdance-host]').forEach((el) => {
-      if (!el.closest('[data-f5-catdance="1"]')) {
-        el.classList.remove('f5ext-catdance-bubble');
-        el.removeAttribute('data-f5-catdance-host');
       }
     });
   }
@@ -241,8 +248,6 @@
     img.alt = '';
     img.loading = 'eager';
     img.decoding = 'async';
-    img.width = 240;
-    img.height = 180;
     media.appendChild(img);
     return media;
   }
@@ -270,9 +275,13 @@
       closeRow.classList.add('f5ext-catdance-close');
     }
 
+    mediaParent.classList.add('f5ext-catdance-bubble');
+
     if (!mediaParent.querySelector('.f5ext-catdance-media')) {
       mediaParent.appendChild(buildCatDanceMedia());
     }
+
+    syncCatDanceBubbleRadius(root, mediaParent);
 
     root.classList.add('f5ext-catdance-root');
     root.setAttribute('data-f5-catdance', '1');
@@ -293,16 +302,38 @@
   }
 
   function ensureCatDanceStyle() {
-    if (document.getElementById(CATDANCE_STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = CATDANCE_STYLE_ID;
-    style.textContent = ''
-      + 'div.f5ext-catdance-root{position:relative!important;display:block!important;overflow:visible!important;}'
-      + '.f5ext-catdance-close{position:absolute!important;top:2px!important;right:2px!important;z-index:3!important;background:transparent!important;}'
-      + '.f5ext-catdance-wrap{display:block;width:100%;box-sizing:border-box;}'
-      + '.f5ext-catdance-media{display:flex;justify-content:center;align-items:center;padding:22px 10px 8px;width:100%;box-sizing:border-box;}'
-      + '.f5ext-catdance-media img{display:block;max-width:min(240px,100%);width:auto;height:auto;}';
-    (document.head || document.documentElement).appendChild(style);
+    const css = ''
+      + 'div.f5ext-catdance-root{'
+      + 'position:relative!important;display:inline-block!important;width:fit-content!important;'
+      + 'min-width:0!important;max-width:min(320px,92vw)!important;padding:0!important;overflow:hidden!important;'
+      + 'border-radius:var(--f5-cd-radius,12px)!important;'
+      + '}'
+      + '.f5ext-catdance-bubble,.f5ext-catdance-wrap{'
+      + 'display:block!important;width:fit-content!important;max-width:100%!important;'
+      + 'min-width:0!important;min-height:0!important;'
+      + 'padding:0!important;margin:0!important;line-height:0!important;box-sizing:border-box!important;'
+      + 'overflow:hidden!important;border-radius:var(--f5-cd-radius,12px)!important;'
+      + '}'
+      + '.f5ext-catdance-close{'
+      + 'position:absolute!important;top:0!important;right:0!important;z-index:3!important;'
+      + 'background:transparent!important;margin:0!important;padding:0!important;'
+      + '}'
+      + '.f5ext-catdance-media{'
+      + 'display:block!important;width:fit-content!important;max-width:100%!important;'
+      + 'padding:0!important;margin:0!important;line-height:0!important;'
+      + 'overflow:hidden!important;border-radius:var(--f5-cd-radius,12px)!important;'
+      + '}'
+      + '.f5ext-catdance-media img{'
+      + 'display:block!important;max-width:min(280px,88vw)!important;width:auto!important;height:auto!important;'
+      + 'vertical-align:top!important;border-radius:var(--f5-cd-radius,12px)!important;'
+      + '}';
+    let style = document.getElementById(CATDANCE_STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = CATDANCE_STYLE_ID;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent = css;
   }
 
   function removeCatDanceStyle() {
@@ -336,12 +367,198 @@
     catDanceObserver.observe(document.body, { childList: true, subtree: true });
   }
 
-  function syncCatDance(_featureEnabled) {
+  function syncCatDance() {
     if (isCatDanceActive()) startCatDanceObserver();
     else {
       stopCatDanceObserver();
       revertAllCatDanceHints();
       removeCatDanceStyle();
+    }
+  }
+
+  // -------- Minesweeper (доп. функция → dock 💣) --------
+  let msGame = null;
+
+  function isMinesweeperActive() {
+    const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_MINESWEEPER;
+    return window.F5VRExtras
+      && featureId
+      && window.F5VRExtras.isFeatureEnabled(featureId, state.extras);
+  }
+
+  function isMsOpen() {
+    return !!(elements.ms && elements.ms.classList.contains('is-open'));
+  }
+
+  function mountMsDockButton() {
+    if (!elements.launcherDock || elements.msDockBtn) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'f5ext-dock-btn f5ext-dock-ms';
+    btn.title = 'Сапёр';
+    btn.setAttribute('aria-label', 'Сапёр');
+    btn.textContent = '💣';
+    btn.hidden = true;
+    elements.launcherDock.insertBefore(btn, elements.launcherDock.firstChild);
+    elements.msDockBtn = btn;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMsPanel();
+    });
+  }
+
+  function syncMinesweeperDock() {
+    if (!elements.msDockBtn) return;
+    elements.msDockBtn.hidden = !isMinesweeperActive();
+  }
+
+  function defaultMsRect() {
+    const w = syncMsPanelWidth() || 420;
+    const h = 280;
+    return {
+      x: Math.max(8, window.innerWidth - w - 70),
+      y: Math.max(8, window.innerHeight - h - 120)
+    };
+  }
+
+  function getMsGameOptions() {
+    if (window.F5VRExtras && window.F5VRExtras.getMinesweeperOptions) {
+      return window.F5VRExtras.getMinesweeperOptions(state.extras);
+    }
+    return { preset: '16', boardSize: '16', rows: 16, cols: 16, mines: 40 };
+  }
+
+  function syncMsPanelWidth() {
+    if (!elements.ms) return 420;
+    const pad = 28;
+    const w = (msGame && msGame.getPanelWidth) ? msGame.getPanelWidth() + pad : 420;
+    elements.ms.style.width = w + 'px';
+    return w;
+  }
+
+  function ensureMinesweeperPanel() {
+    if (elements.ms) return;
+    const ms = document.createElement('div');
+    ms.id = 'f5ext-ms';
+    ms.className = 'f5ext-ms';
+    ms.innerHTML = ''
+      + '<div class="f5ext-ms-shell">'
+      +   '<div class="f5ext-ms-clip">'
+      +     '<div class="f5ext-ms-head">'
+      +       '<div class="f5ext-ms-title">Сапёр</div>'
+      +       '<button type="button" class="f5ext-btn-ic js-ms-close" title="Закрыть">×</button>'
+      +     '</div>'
+      +     '<div class="f5ext-ms-body">'
+      +       '<div class="f5ext-ms-mount"></div>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(ms);
+    elements.ms = ms;
+    elements.msMount = ms.querySelector('.f5ext-ms-mount');
+    bindMsPanel();
+  }
+
+  function startMsGame() {
+    if (!elements.msMount || !window.F5VRMinesweeper) return;
+    if (msGame && msGame.destroy) msGame.destroy();
+    const msId = window.F5VRExtras && window.F5VRExtras.FEATURE_MINESWEEPER;
+    msGame = window.F5VRMinesweeper.create(elements.msMount, Object.assign({}, getMsGameOptions(), {
+      onPresetChange: function (nextKey) {
+        if (!window.F5VRExtras || !msId) return;
+        window.F5VRExtras.setFeatureSetting(msId, 'boardSize', nextKey).then(function () {
+          return loadExtrasFromStorage();
+        }).then(function () {
+          startMsGame();
+          syncMsPanelWidth();
+        });
+      }
+    }));
+    syncMsPanelWidth();
+  }
+
+  function openMsPanel() {
+    if (!isMinesweeperActive()) return;
+    if (!panelMounted) mountPanel();
+    ensureMinesweeperPanel();
+    if (!elements.ms) return;
+    const def = defaultMsRect();
+    elements.ms.style.left = def.x + 'px';
+    elements.ms.style.top = def.y + 'px';
+    elements.ms.style.right = 'auto';
+    elements.ms.style.bottom = 'auto';
+    elements.ms.classList.add('is-open');
+    bringToFront(elements.ms);
+    if (!msGame) startMsGame();
+    else syncMsPanelWidth();
+    syncDockState();
+  }
+
+  function closeMsPanel() {
+    if (!elements.ms) return;
+    elements.ms.classList.remove('is-open');
+    syncDockState();
+  }
+
+  function toggleMsPanel() {
+    if (isMsOpen()) closeMsPanel();
+    else openMsPanel();
+  }
+
+  function destroyMinesweeperPanel() {
+    closeMsPanel();
+    if (msGame && msGame.destroy) msGame.destroy();
+    msGame = null;
+    if (elements.ms && elements.ms.parentNode) {
+      elements.ms.parentNode.removeChild(elements.ms);
+    }
+    elements.ms = null;
+    elements.msMount = null;
+  }
+
+  function bindMsPanel() {
+    if (!elements.ms) return;
+    elements.ms.querySelector('.js-ms-close').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMsPanel();
+    });
+
+    const head = elements.ms.querySelector('.f5ext-ms-head');
+    const drag = { active: false, dx: 0, dy: 0 };
+    head.addEventListener('mousedown', (e) => {
+      if (e.target && e.target.closest && e.target.closest('.f5ext-btn-ic')) return;
+      if (e.button !== 0) return;
+      const r = elements.ms.getBoundingClientRect();
+      drag.active = true;
+      drag.dx = e.clientX - r.left;
+      drag.dy = e.clientY - r.top;
+      elements.ms.style.right = 'auto';
+      elements.ms.style.bottom = 'auto';
+      elements.ms.style.left = r.left + 'px';
+      elements.ms.style.top = r.top + 'px';
+      bringToFront(elements.ms);
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!drag.active || !elements.ms) return;
+      const w = elements.ms.offsetWidth || 660;
+      const h = elements.ms.offsetHeight || 240;
+      const x = clamp(e.clientX - drag.dx, 6, window.innerWidth - Math.max(60, w - 40));
+      const y = clamp(e.clientY - drag.dy, 6, window.innerHeight - Math.max(60, h - 40));
+      elements.ms.style.left = x + 'px';
+      elements.ms.style.top = y + 'px';
+    });
+    document.addEventListener('mouseup', () => { drag.active = false; });
+
+    elements.ms.addEventListener('mousedown', () => bringToFront(elements.ms), true);
+  }
+
+  function syncMinesweeper() {
+    syncMinesweeperDock();
+    if (!isMinesweeperActive()) {
+      destroyMinesweeperPanel();
     }
   }
 
@@ -470,7 +687,7 @@
   function escapeHtml(s) { return window.F5VRParser.escapeHtml(s); }
 
   function removeOrphanDom() {
-    const sel = '#f5ext-launcher-wrap, #f5ext-launcher, #f5ext-panel, #f5ext-vars, .f5ext-tooltip';
+    const sel = '#f5ext-launcher-wrap, #f5ext-launcher, #f5ext-panel, #f5ext-vars, #f5ext-ms, .f5ext-tooltip';
     document.querySelectorAll(sel).forEach((n) => {
       try { n.remove(); } catch (e) {}
     });
@@ -493,7 +710,7 @@
     const launcherDock = document.createElement('div');
     launcherDock.className = 'f5ext-launcher-dock';
     launcherDock.innerHTML = ''
-      + '<button type="button" class="f5ext-dock-btn js-open-vars" '
+      + '<button type="button" class="f5ext-dock-btn" '
       +   'title="Шаблонизатор переменных" aria-label="Шаблонизатор переменных">{…}</button>';
 
     const btn = document.createElement('div');
@@ -504,6 +721,8 @@
 
     launcherWrap.appendChild(launcherDock);
     launcherWrap.appendChild(btn);
+
+    elements.launcherDock = launcherDock;
 
     const panel = document.createElement('div');
     panel.id = 'f5ext-panel';
@@ -609,6 +828,8 @@
     elements.tip = tip;
 
     bindLauncher();
+    mountMsDockButton();
+    syncMinesweeper();
     bindHeaderActions();
     bindDragAndResize();
     bindInputAndPreview();
@@ -634,6 +855,8 @@
     try { if (elements.launcherWrap && elements.launcherWrap.parentNode) elements.launcherWrap.parentNode.removeChild(elements.launcherWrap); } catch (e) {}
     try { if (elements.panel && elements.panel.parentNode) elements.panel.parentNode.removeChild(elements.panel); } catch (e) {}
     try { if (elements.vars && elements.vars.parentNode) elements.vars.parentNode.removeChild(elements.vars); } catch (e) {}
+    destroyMinesweeperPanel();
+    elements.msDockBtn = null;
     try { if (elements.tip && elements.tip.parentNode) elements.tip.parentNode.removeChild(elements.tip); } catch (e) {}
     elements = createEmptyElements();
     panelMounted = false;
@@ -695,7 +918,8 @@
   function bringToFront(el) {
     if (!el) return;
     if (elements.panel) elements.panel.classList.remove('is-front');
-    if (elements.vars)  elements.vars.classList.remove('is-front');
+    if (elements.vars) elements.vars.classList.remove('is-front');
+    if (elements.ms) elements.ms.classList.remove('is-front');
     el.classList.add('is-front');
   }
 
@@ -734,6 +958,7 @@
   function syncDockState() {
     const open = isVarsOpen();
     if (elements.dockBtn) elements.dockBtn.classList.toggle('is-active', open);
+    if (elements.msDockBtn) elements.msDockBtn.classList.toggle('is-active', isMsOpen());
     // Ту же подсветку используем и для кнопки «{…}» в шапке расшифровщика —
     // чтобы пользователь сразу видел, открыт ли уже шаблонизатор.
     if (elements.panel) {
@@ -1944,7 +2169,10 @@
       });
     }
     if (window.F5VRExtras && changes[window.F5VRExtras.STORAGE_EXTRAS_KEY]) {
-      loadExtrasFromStorage().then(() => applyExtrasFeatures());
+      loadExtrasFromStorage().then(() => {
+        applyExtrasFeatures();
+        if (isMsOpen() && isMinesweeperActive()) startMsGame();
+      });
     }
   });
 
@@ -1978,7 +2206,7 @@
       loadExtrasFromStorage().then(() => {
         revertAllCatDanceHints();
         applyExtrasFeatures();
-        if (isCatDanceActive()) scanCatDanceHints();
+        if (isMsOpen() && isMinesweeperActive()) startMsGame();
         sendResponse({ ok: true });
       });
       return true;

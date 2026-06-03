@@ -135,8 +135,7 @@ body {
 .extras-empty {
   font-size: 12px; color: #94a3b8; padding: 8px 2px;
 }
-.extras-empty[hidden], .extras-list:not(:empty) + .extras-empty { display: none; }
-.extras-list:empty + .extras-empty { display: block; }
+.extras-empty[hidden] { display: none; }
 .extras-item-block {
   border: 1px solid #eef1f4; border-radius: 8px; background: #fafbfc; overflow: hidden;
 }
@@ -148,7 +147,19 @@ body {
 .extras-settings-label {
   font-size: 11px; font-weight: 700; color: #64748b; margin: 8px 0 4px;
 }
-.extras-gif-row { display: flex; gap: 6px; }
+.extras-gif-row {
+  display: flex; gap: 6px;
+}
+.extras-gif-row select.extras-ms-size {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
 .extras-gif-input {
   flex: 1; min-width: 0; height: 30px; padding: 0 8px;
   border: 1px solid #dfe3e8; border-radius: 6px; font-size: 11px;
