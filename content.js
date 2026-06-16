@@ -1171,6 +1171,7 @@
   function getEntitySystemValue(entity, root, prop) {
     if (!entity) return '';
     const p = String(prop || '').toLowerCase();
+    const nameParts = String(entity.name || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
     if (p === 'id') return entity.id || '';
     if (p === 'name') return entity.name || '';
     if (root === 'lead' && (p === 'sale' || p === 'price' || p === 'budget')) return entity.price || 0;
@@ -1180,8 +1181,8 @@
     if (p === 'closed_at') return entity.closed_at || '';
     if (p === 'status_id') return entity.status_id || '';
     if (p === 'pipeline_id') return entity.pipeline_id || '';
-    if (p === 'first_name') return entity.first_name || '';
-    if (p === 'last_name') return entity.last_name || '';
+    if (p === 'first_name') return entity.first_name || nameParts[1] || nameParts[0] || '';
+    if (p === 'last_name') return entity.last_name || (nameParts.length > 1 ? nameParts[0] : '');
     return entity[prop] != null ? entity[prop] : '';
   }
 
@@ -2043,17 +2044,22 @@
     return errors;
   }
 
+  function renderEntityCalcResult(text) {
+    if (!elements.entityCalcResult) return;
+    elements.entityCalcResult.innerHTML = escapeHtml(text || '').replace(/&lt;br&gt;/g, '<br>');
+  }
+
   async function evaluateEntityCalcInput() {
     if (!elements.entityCalcInput || !elements.entityCalcResult) return;
     if (!entityCalcContext) {
-      elements.entityCalcResult.textContent = 'Сначала загрузите данные сущности.';
+      renderEntityCalcResult('Сначала загрузите данные сущности.');
       setEntityCalcErrors(['Сначала нажмите «Проверить», чтобы загрузить данные сущности.']);
       return;
     }
     const source = elements.entityCalcInput.value || '';
     const res = await evaluateEntityCalcTemplate(source, entityCalcContext);
     setEntityCalcErrors(validateEntityCalcResult(source, res));
-    elements.entityCalcResult.textContent = res.result;
+    renderEntityCalcResult(res.result);
   }
 
   function syncEntityCalc() {
