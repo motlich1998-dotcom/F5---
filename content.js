@@ -1331,6 +1331,12 @@
     return out;
   }
 
+  function spellDateRu(value) {
+    const d = dateFromValue(value);
+    if (!d) return '';
+    return spellNumRu(d.getDate()) + ' ' + formatDate(d, 'F') + ' ' + spellNumRu(d.getFullYear()) + ' года';
+  }
+
   function addDatePart(date, amount, unit) {
     const d = new Date(date.getTime());
     const u = String(unit || '').toLowerCase();
@@ -1528,6 +1534,19 @@
     return (toCalcNumber(value) < 0 ? 'минус ' : '') + words.filter(Boolean).join(' ');
   }
 
+  function ordinalNumRu(value) {
+    const n = Math.abs(Math.floor(toCalcNumber(value)));
+    const map = {
+      1: 'первый', 2: 'второй', 3: 'третий', 4: 'четвёртый', 5: 'пятый',
+      6: 'шестой', 7: 'седьмой', 8: 'восьмой', 9: 'девятый', 10: 'десятый',
+      11: 'одиннадцатый', 12: 'двенадцатый', 13: 'тринадцатый', 14: 'четырнадцатый',
+      15: 'пятнадцатый', 16: 'шестнадцатый', 17: 'семнадцатый', 18: 'восемнадцатый',
+      19: 'девятнадцатый', 20: 'двадцатый'
+    };
+    if (map[n]) return map[n];
+    return spellNumRu(n) + '-й';
+  }
+
   function currencyForms(code) {
     const c = String(code || 'rub').toLowerCase();
     const map = {
@@ -1591,6 +1610,65 @@
     return words;
   }
 
+  function isEvenValue(value) {
+    return Math.abs(Math.floor(toCalcNumber(value))) % 2 === 0 ? '1' : '0';
+  }
+
+  function currencyConvertValue(value, args) {
+    const currency = String(args[0] || '').trim().toUpperCase();
+    const rates = { USD: 90, EUR: 100, BYN: 28, UAH: 2.3, CNY: 12.5, TRY: 3, GBP: 116 };
+    const rate = rates[currency];
+    if (!rate) return value;
+    return String(Math.round((toCalcNumber(value) / rate) * 100) / 100);
+  }
+
+  function detectGender(value) {
+    const s = String(value || '').trim().toLowerCase();
+    if (!s) return '';
+    const first = s.split(/\s+/)[0];
+    if (/(а|я|ия|на|ла)$/.test(first)) return 'f';
+    return 'm';
+  }
+
+  function applySpVerb(value, args) {
+    const verb = args[0] || '';
+    if (!verb) return '';
+    if (detectGender(value) === 'f') {
+      if (/л$/.test(verb)) return verb + 'а';
+      if (/ел$/.test(verb)) return verb.replace(/ел$/, 'ела');
+    }
+    return verb;
+  }
+
+  function firstMeaningfulLetter(value) {
+    const m = String(value || '').trim().toLowerCase().match(/[а-яёa-z0-9]/i);
+    return m ? m[0] : '';
+  }
+
+  function spIn(value) {
+    const ch = firstMeaningfulLetter(value);
+    return /^[вф]/i.test(ch) ? 'во ' + value : 'в ' + value;
+  }
+
+  function spWith(value) {
+    const ch = firstMeaningfulLetter(value);
+    return /^[сзшж]/i.test(ch) ? 'со ' + value : 'с ' + value;
+  }
+
+  function spAbout(value) {
+    const ch = firstMeaningfulLetter(value);
+    if (/^[аеёиоуыэюя]/i.test(ch)) return 'об ' + value;
+    return 'о ' + value;
+  }
+
+  function quoteMeta(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function simpleDecl(value) {
+    return String(value || '');
+  }
+
   function evalCondition(value, op, compare) {
     const left = String(value == null ? '' : value);
     const right = String(compare == null ? '' : compare);
@@ -1623,8 +1701,18 @@
         const p = Math.pow(10, d);
         return String(Math.round(toCalcNumber(value) * p) / p);
       }
-      if (name === 'floor') return String(Math.floor(toCalcNumber(value)));
-      if (name === 'ceil') return String(Math.ceil(toCalcNumber(value)));
+      if (name === 'floor') {
+        const d = Math.max(0, Number(args[0]) || 0);
+        const p = Math.pow(10, d);
+        return String(Math.floor(toCalcNumber(value) * p) / p);
+      }
+      if (name === 'ceil') {
+        const d = Math.max(0, Number(args[0]) || 0);
+        const p = Math.pow(10, d);
+        return String(Math.ceil(toCalcNumber(value) * p) / p);
+      }
+      if (name === 'currencyconvert') return currencyConvertValue(value, args);
+      if (name === 'iseven') return isEvenValue(value);
       if (name === 'ifempty') return isEmptyValue(value) ? (args[0] || '') : value;
       if (name === 'ifnotempty') return !isEmptyValue(value) ? (args[0] || '') : value;
       if (name === 'if') {
@@ -1633,6 +1721,7 @@
         return args[3] !== undefined ? args[3] : value;
       }
       if (name === 'df') return formatDate(value, args[0] || 'd.m.Y');
+      if (name === 'spell_date') return spellDateRu(value);
       if (name === 'dm') return modifyDate(value, args[0] || 'd.m.Y', args[1] || '');
       if (name === 'date_diff') return formatDateDiff(value, args);
       if (name === 'addworkdays') return addBasicWorkdays(value, Number(args[0]) || 0, args[1] || 'd.m.Y');
@@ -1649,6 +1738,7 @@
         const s = String(value || '');
         return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
       }
+      if (name === 'ucw') return String(value || '').replace(/\b\S/g, (ch) => ch.toUpperCase());
       if (name === 'length') return String(String(value || '').length);
       if (name === 'tonumeric') return String(value || '').replace(/\D+/g, '');
       if (name === 'replace') return args[0] ? String(value || '').split(args[0]).join(args[1] || '') : String(value || '');
@@ -1669,8 +1759,16 @@
       if (name === 'part') return partValue(value, args);
       if (name === 'noun_plur') return nounPlural(value, args);
       if (name === 'spell_num') return spellNumRu(value);
+      if (name === 'spell_ordinal' || name === 'ordinal_num') return ordinalNumRu(value);
       if (name === 'spell_money') return spellMoneyRu(value, args, 'rub');
       if (name === 'spell_price') return spellMoneyRu(value, args, 'rub');
+      if (name === 'gender') return detectGender(value);
+      if (name === 'sp_verb') return applySpVerb(value, args);
+      if (name === 'sp_in') return spIn(value);
+      if (name === 'sp_with') return spWith(value);
+      if (name === 'sp_about') return spAbout(value);
+      if (name === 'quotemeta') return quoteMeta(value);
+      if (name === 'noun_decl' || name === 'noun_mdecl' || name === 'infl_name' || name === 'infl_geo') return simpleDecl(value);
       errors.push('Модификатор пока не поддерживается: :' + modifier);
       return value;
     } catch (e) {
@@ -1897,11 +1995,11 @@
     }
 
     let calcCount = 0;
-    let result = substituted.replace(/\{\{\s*\(([^{}]+)\)\s*:calc\s*\}\}/g, (m, expr) => {
+    let result = substituted.replace(/\{\{\s*\(([^{}]+)\)\s*:calc((?::[^{}]+)*)\s*\}\}/g, (m, expr, chain) => {
       calcCount++;
       try {
         const value = safeCalcExpression(expr);
-        return String(value);
+        return String(applyEntityModifiers(value, chain || '', errors));
       } catch (e) {
         errors.push(e && e.message ? e.message : String(e));
         return '[calc error]';
