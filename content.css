@@ -729,3 +729,223 @@
 .f5ext-ms-cell.is-n6 { color: #0e7490; }
 .f5ext-ms-cell.is-n7 { color: #111827; }
 .f5ext-ms-cell.is-n8 { color: #64748b; }
+
+/* ==== Формулы по текущей сущности (доп. функция) ==== */
+.f5ext-entity-widget-host {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.f5ext-entity-widget-btn {
+  display: block;
+  width: 128px;
+  min-height: 34px;
+  margin: 8px;
+  border: 1px solid rgba(15, 23, 42, .14);
+  border-radius: 6px;
+  background: #0b0f18;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .18);
+  cursor: pointer;
+  font: 800 13px/32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  text-align: center;
+  letter-spacing: .04em;
+  z-index: 2147483603;
+}
+.f5ext-entity-widget-btn:hover { background: #111827; }
+.f5ext-entity-widget-btn.is-header {
+  flex: 0 0 auto;
+  width: 126px;
+  height: 32px;
+  min-height: 32px;
+  margin: 0 10px 0 auto;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 30px;
+}
+.f5ext-entity-widget-btn.is-floating {
+  position: fixed;
+  right: 14px;
+  top: 360px;
+  width: 118px;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  border-radius: 10px;
+  line-height: 34px;
+}
+
+.f5ext-entity-calc {
+  position: fixed;
+  z-index: 2147483602;
+  display: none;
+  width: 520px;
+  height: 430px;
+  max-width: 96vw;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #111827;
+}
+.f5ext-entity-calc.is-open { display: block; }
+.f5ext-entity-calc.is-front { z-index: 2147483605; }
+.f5ext-entity-calc-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .22), 0 2px 6px rgba(15, 23, 42, .08);
+  overflow: hidden;
+}
+.f5ext-entity-calc-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+  cursor: move;
+  user-select: none;
+}
+.f5ext-entity-calc-title {
+  min-width: 0;
+  font-weight: 800;
+  color: #0f172a;
+}
+.f5ext-entity-calc-route {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, .12);
+  background: #fff;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+.f5ext-entity-calc-actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.f5ext-entity-calc-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  overflow: auto;
+}
+.f5ext-entity-calc-status {
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+}
+.f5ext-entity-calc-status[hidden] { display: none !important; }
+.f5ext-entity-calc-status.is-progress { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.f5ext-entity-calc-status.is-ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+.f5ext-entity-calc-status.is-err { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+.f5ext-entity-calc-input {
+  width: 100%;
+  min-height: 96px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.f5ext-entity-calc-input:focus {
+  border-color: #1f6feb;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
+}
+.f5ext-entity-calc-input.is-error {
+  border-color: #ef4444;
+  background: #fff7f7;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .12);
+}
+.f5ext-entity-calc-errors {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  overflow: hidden;
+}
+.f5ext-entity-calc-errors[hidden] { display: none !important; }
+.f5ext-entity-calc-errors .f5ext-entity-error {
+  padding: 7px 10px;
+  border-top: 1px solid rgba(239, 68, 68, .12);
+}
+.f5ext-entity-calc-errors .f5ext-entity-error:first-of-type { border-top: none; }
+.f5ext-entity-calc-runrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.f5ext-entity-calc-run {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #0b0f18;
+  border-radius: 7px;
+  background: #0b0f18;
+  color: #fff;
+  cursor: pointer;
+  font: 800 12px/30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.f5ext-entity-calc-run:hover { background: #111827; }
+.f5ext-entity-calc-secondary {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: 800 12px/30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.f5ext-entity-calc-secondary:hover { background: #f8fafc; }
+.f5ext-entity-calc-runrow span {
+  color: #64748b;
+  font-size: 11px;
+}
+.f5ext-entity-calc-result {
+  border: 1px solid rgba(15, 23, 42, .10);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+.f5ext-entity-calc-subtitle {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, .08);
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.f5ext-entity-calc-output {
+  min-height: 42px;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #0f172a;
+  font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.f5ext-entity-empty {
+  padding: 9px 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+.f5ext-entity-error {
+  color: #991b1b;
+  font-size: 12px;
+}

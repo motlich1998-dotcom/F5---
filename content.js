@@ -10,6 +10,7 @@
   const STORAGE_SETTINGS_KEY = 'f5vr:settings';
   const STORAGE_PANEL_RECT_KEY = 'f5vr:panel_rect';
   const STORAGE_VARS_KEY = 'f5vr:vars_panel';
+  const STORAGE_ENTITY_CALC_RECT_KEY = 'f5vr:entity_calc_rect';
   const TTL_MS = 24 * 3600 * 1000;
   const HOST = location.hostname;
   if (!HOST) return;
@@ -84,7 +85,9 @@
       panel: null, input: null, preview: null,
       modPanel: null, status: null, tip: null,
       vars: null, varsList: null, varsSearch: null, varsModSel: null, varsTabs: null, varsHint: null,
-      ms: null, msMount: null
+      ms: null, msMount: null,
+      entityWidgetBtn: null, entityCalc: null, entityCalcInput: null, entityCalcResult: null,
+      entityCalcStatus: null, entityCalcErrors: null
     };
   }
   let activeVarsGroup = 'all';
@@ -106,6 +109,9 @@
       },
       onMinesweeper: function () {
         syncMinesweeper();
+      },
+      onEntityCalc: function () {
+        syncEntityCalc();
       }
     });
   }
@@ -550,7 +556,17 @@
       elements.ms.style.left = x + 'px';
       elements.ms.style.top = y + 'px';
     });
-    document.addEventListener('mouseup', () => { drag.active = false; });
+    document.addEventListener('mouseup', () => {
+      if (!drag.active || !elements.entityCalc) return;
+      drag.active = false;
+      const rr = elements.entityCalc.getBoundingClientRect();
+      saveEntityCalcRect({
+        x: Math.round(rr.left),
+        y: Math.round(rr.top),
+        w: Math.round(rr.width),
+        h: Math.round(rr.height)
+      });
+    });
 
     elements.ms.addEventListener('mousedown', () => bringToFront(elements.ms), true);
   }
@@ -559,6 +575,1395 @@
     syncMinesweeperDock();
     if (!isMinesweeperActive()) {
       destroyMinesweeperPanel();
+    }
+  }
+
+  // -------- Entity formula MVP (доп. функция → результат :calc на карточке) --------
+  let entityCalcObserver = null;
+  let entityCalcScanTimer = null;
+  let entityCalcHistoryHooked = false;
+  let entityCalcContext = null;
+  let entityCalcContextKey = '';
+  let entityCalcLoading = null;
+
+  function isEntityCalcActive() {
+    const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_ENTITY_CALC;
+    return window.F5VRExtras
+      && featureId
+      && window.F5VRExtras.isFeatureEnabled(featureId, state.extras);
+  }
+
+  function currentEntityRoute() {
+    const m = location.pathname.match(/^\/(leads|contacts|companies)\/detail\/(\d+)/);
+    if (!m) return null;
+    const root = m[1] === 'leads' ? 'lead' : m[1] === 'contacts' ? 'contact' : 'company';
+    return { plural: m[1], root: root, id: m[2], key: m[1] + ':' + m[2] };
+  }
+
+  function scheduleEntityCalcScan() {
+    if (!isEntityCalcActive()) return;
+    if (entityCalcScanTimer) clearTimeout(entityCalcScanTimer);
+    entityCalcScanTimer = setTimeout(() => {
+      entityCalcScanTimer = null;
+      syncEntityCalcWidget();
+    }, 120);
+  }
+
+  function hookEntityCalcHistory() {
+    if (entityCalcHistoryHooked) return;
+    entityCalcHistoryHooked = true;
+    ['pushState', 'replaceState'].forEach((name) => {
+      const original = history[name];
+      if (!original || original.__f5vrEntityCalcHooked) return;
+      const wrapped = function () {
+        const res = original.apply(this, arguments);
+        window.dispatchEvent(new Event('F5VR_LOCATION_CHANGED'));
+        return res;
+      };
+      wrapped.__f5vrEntityCalcHooked = true;
+      history[name] = wrapped;
+    });
+    window.addEventListener('popstate', scheduleEntityCalcScan);
+    window.addEventListener('F5VR_LOCATION_CHANGED', scheduleEntityCalcScan);
+  }
+
+  function visibleRect(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width < 20 || r.height < 10) return null;
+    const st = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (st && (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0)) return null;
+    return r;
+  }
+
+  function findAmoWidgetsHeaderHost() {
+    const nodes = Array.from(document.querySelectorAll('aside, section, div, h1, h2, h3, span'));
+    let best = null;
+    let bestTop = Infinity;
+    nodes.forEach((el) => {
+      if (el.id && /^f5ext-/.test(el.id)) return;
+      const directText = Array.from(el.childNodes).filter((n) => n.nodeType === 3)
+        .map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+      const text = directText || (el.children.length ? '' : (el.textContent || '').replace(/\s+/g, ' ').trim());
+      if (text !== 'Виджеты') return;
+      const r = visibleRect(el);
+      if (!r) return;
+      if (r.right < window.innerWidth * 0.75) return;
+      const host = el.parentElement;
+      if (!host || (host.id && /^f5ext-/.test(host.id))) return;
+      const hr = host.getBoundingClientRect ? host.getBoundingClientRect() : null;
+      if (!hr || hr.width < 120 || hr.width > 460) return;
+      if (r.top < bestTop) {
+        bestTop = r.top;
+        best = host;
+      }
+    });
+    return best;
+  }
+
+  function createEntityWidgetButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'f5ext-entity-widget-btn';
+    btn.textContent = 'F5 Формула';
+    btn.title = 'Проверить формулу по текущей сущности';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openEntityCalcPanel();
+    });
+    elements.entityWidgetBtn = btn;
+    return btn;
+  }
+
+  function removeEntityWidgetButton() {
+    if (elements.entityWidgetBtn && elements.entityWidgetBtn.parentNode) {
+      elements.entityWidgetBtn.parentNode.removeChild(elements.entityWidgetBtn);
+    }
+    elements.entityWidgetBtn = null;
+  }
+
+  function syncEntityCalcWidget() {
+    const route = currentEntityRoute();
+    if (!isEntityCalcActive() || !route) {
+      removeEntityWidgetButton();
+      if (elements.entityCalc) closeEntityCalcPanel();
+      return;
+    }
+
+    ensureStyles();
+    const btn = elements.entityWidgetBtn || createEntityWidgetButton();
+    btn.classList.remove('is-floating', 'is-header');
+    const host = findAmoWidgetsHeaderHost();
+    if (host) {
+      host.classList.add('f5ext-entity-widget-host');
+      btn.classList.add('is-header');
+      if (btn.parentNode !== host) host.appendChild(btn);
+    } else {
+      btn.classList.add('is-floating');
+      if (btn.parentNode !== document.body) document.body.appendChild(btn);
+    }
+    if (elements.entityCalc && elements.entityCalc.classList.contains('is-open')) {
+      if (entityCalcContextKey !== route.key) {
+        entityCalcContext = null;
+        entityCalcContextKey = '';
+        setEntityCalcStatus('', '');
+        if (elements.entityCalcResult) elements.entityCalcResult.textContent = '';
+      }
+    }
+  }
+
+  function startEntityCalcObserver() {
+    stopEntityCalcObserver();
+    if (!document.body) return;
+    ensureStyles();
+    hookEntityCalcHistory();
+    syncEntityCalcWidget();
+    entityCalcObserver = new MutationObserver(scheduleEntityCalcScan);
+    entityCalcObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function stopEntityCalcObserver() {
+    if (entityCalcObserver) {
+      entityCalcObserver.disconnect();
+      entityCalcObserver = null;
+    }
+    if (entityCalcScanTimer) {
+      clearTimeout(entityCalcScanTimer);
+      entityCalcScanTimer = null;
+    }
+  }
+
+  function defaultEntityCalcRect() {
+    const w = 520;
+    const h = 430;
+    return {
+      x: Math.max(8, window.innerWidth - w - 90),
+      y: Math.max(8, Math.min(140, window.innerHeight - h - 24)),
+      w: w,
+      h: h
+    };
+  }
+
+  function getEntityCalcRect() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(STORAGE_ENTITY_CALC_RECT_KEY, (raw) => {
+        resolve(raw[STORAGE_ENTITY_CALC_RECT_KEY] || null);
+      });
+    });
+  }
+
+  function saveEntityCalcRect(rect) {
+    const patch = {};
+    patch[STORAGE_ENTITY_CALC_RECT_KEY] = rect;
+    chrome.storage.local.set(patch);
+  }
+
+  function ensureEntityCalcPanel() {
+    if (elements.entityCalc) return;
+    const panel = document.createElement('div');
+    panel.id = 'f5ext-entity-calc';
+    panel.className = 'f5ext-entity-calc';
+    panel.innerHTML = ''
+      + '<div class="f5ext-entity-calc-shell">'
+      +   '<div class="f5ext-resize" data-dir="n"></div>'
+      +   '<div class="f5ext-resize" data-dir="s"></div>'
+      +   '<div class="f5ext-resize" data-dir="e"></div>'
+      +   '<div class="f5ext-resize" data-dir="w"></div>'
+      +   '<div class="f5ext-resize" data-dir="ne"></div>'
+      +   '<div class="f5ext-resize" data-dir="nw"></div>'
+      +   '<div class="f5ext-resize" data-dir="se"></div>'
+      +   '<div class="f5ext-resize" data-dir="sw"></div>'
+      +   '<div class="f5ext-entity-calc-head">'
+      +     '<div class="f5ext-entity-calc-title">F5 — формула по сущности</div>'
+      +     '<div class="f5ext-entity-calc-actions">'
+      +       '<button type="button" class="f5ext-btn-ic js-entity-vars" title="Шаблонизатор переменных">{…}</button>'
+      +       '<button type="button" class="f5ext-btn-ic js-entity-close" title="Закрыть">×</button>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="f5ext-entity-calc-body">'
+      +     '<div class="f5ext-entity-calc-status" hidden></div>'
+      +     '<textarea class="f5ext-entity-calc-input" spellcheck="false"></textarea>'
+      +     '<div class="f5ext-entity-calc-errors" hidden></div>'
+      +     '<div class="f5ext-entity-calc-runrow">'
+      +       '<button type="button" class="f5ext-entity-calc-run js-entity-run">Проверить</button>'
+      +     '</div>'
+      +     '<div class="f5ext-entity-calc-result"><div class="f5ext-entity-calc-subtitle">Результат</div><div class="f5ext-entity-calc-output"></div></div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(panel);
+    elements.entityCalc = panel;
+    elements.entityCalcInput = panel.querySelector('.f5ext-entity-calc-input');
+    elements.entityCalcResult = panel.querySelector('.f5ext-entity-calc-output');
+    elements.entityCalcStatus = panel.querySelector('.f5ext-entity-calc-status');
+    elements.entityCalcErrors = panel.querySelector('.f5ext-entity-calc-errors');
+    bindEntityCalcPanel();
+  }
+
+  function destroyEntityCalcPanel() {
+    if (elements.entityCalc && elements.entityCalc.parentNode) {
+      elements.entityCalc.parentNode.removeChild(elements.entityCalc);
+    }
+    elements.entityCalc = null;
+    elements.entityCalcInput = null;
+    elements.entityCalcResult = null;
+    elements.entityCalcStatus = null;
+    elements.entityCalcErrors = null;
+    entityCalcContext = null;
+    entityCalcContextKey = '';
+  }
+
+  function closeEntityCalcPanel() {
+    if (!elements.entityCalc) return;
+    elements.entityCalc.classList.remove('is-open');
+  }
+
+  function setEntityCalcStatus(text, kind) {
+    if (!elements.entityCalcStatus) return;
+    elements.entityCalcStatus.textContent = text || '';
+    elements.entityCalcStatus.hidden = !text;
+    elements.entityCalcStatus.classList.remove('is-ok', 'is-err', 'is-progress');
+    if (kind) elements.entityCalcStatus.classList.add(kind);
+  }
+
+  function setEntityCalcErrors(errors) {
+    if (!elements.entityCalcErrors) return;
+    const list = Array.from(new Set((errors || []).filter(Boolean)));
+    elements.entityCalcErrors.hidden = list.length === 0;
+    elements.entityCalcErrors.innerHTML = list.length
+      ? '<div class="f5ext-entity-calc-subtitle">Ошибки</div>'
+        + list.map((err) => '<div class="f5ext-entity-error">' + escapeHtml(err) + '</div>').join('')
+      : '';
+    if (elements.entityCalcInput) elements.entityCalcInput.classList.toggle('is-error', list.length > 0);
+  }
+
+  function openEntityCalcPanel() {
+    const route = currentEntityRoute();
+    if (!isEntityCalcActive() || !route) return;
+    ensureEntityCalcPanel();
+    const def = defaultEntityCalcRect();
+    getEntityCalcRect().then((stored) => {
+      if (!elements.entityCalc) return;
+      const maxW = Math.floor(window.innerWidth * 0.96);
+      const maxH = Math.floor(window.innerHeight * 0.92);
+      const w = clamp((stored && stored.w) || def.w, 380, maxW);
+      const h = clamp((stored && stored.h) || def.h, 300, maxH);
+      const x = clamp((stored && stored.x != null) ? stored.x : def.x, 6, window.innerWidth - 80);
+      const y = clamp((stored && stored.y != null) ? stored.y : def.y, 6, window.innerHeight - 60);
+      elements.entityCalc.style.left = x + 'px';
+      elements.entityCalc.style.top = y + 'px';
+      elements.entityCalc.style.width = w + 'px';
+      elements.entityCalc.style.height = h + 'px';
+      elements.entityCalc.style.right = 'auto';
+      elements.entityCalc.style.bottom = 'auto';
+    });
+    elements.entityCalc.classList.add('is-open');
+    bringToFront(elements.entityCalc);
+    setEntityCalcStatus('', '');
+    setEntityCalcErrors([]);
+    if (elements.entityCalcResult) elements.entityCalcResult.textContent = '';
+  }
+
+  function bindEntityCalcPanel() {
+    if (!elements.entityCalc) return;
+    elements.entityCalc.querySelector('.js-entity-close').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeEntityCalcPanel();
+    });
+    elements.entityCalc.querySelector('.js-entity-vars').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!panelMounted) mountPanel();
+      if (elements.vars) toggleVarsPanel();
+    });
+    elements.entityCalc.querySelector('.js-entity-run').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      loadEntityCalcContext(true).then(evaluateEntityCalcInput);
+    });
+    elements.entityCalcInput.addEventListener('input', () => {
+      if (elements.entityCalcResult) elements.entityCalcResult.textContent = '';
+      setEntityCalcErrors([]);
+    });
+
+    const head = elements.entityCalc.querySelector('.f5ext-entity-calc-head');
+    const drag = { active: false, dx: 0, dy: 0 };
+    head.addEventListener('mousedown', (e) => {
+      if (e.target && e.target.closest && e.target.closest('.f5ext-btn-ic')) return;
+      if (e.button !== 0) return;
+      const r = elements.entityCalc.getBoundingClientRect();
+      drag.active = true;
+      drag.dx = e.clientX - r.left;
+      drag.dy = e.clientY - r.top;
+      bringToFront(elements.entityCalc);
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!drag.active || !elements.entityCalc) return;
+      const w = elements.entityCalc.offsetWidth || 520;
+      const h = elements.entityCalc.offsetHeight || 420;
+      elements.entityCalc.style.left = clamp(e.clientX - drag.dx, 6, window.innerWidth - Math.max(60, w - 40)) + 'px';
+      elements.entityCalc.style.top = clamp(e.clientY - drag.dy, 6, window.innerHeight - Math.max(60, h - 40)) + 'px';
+    });
+    document.addEventListener('mouseup', () => { drag.active = false; });
+    elements.entityCalc.addEventListener('mousedown', () => bringToFront(elements.entityCalc), true);
+
+    const rs = { active: false, dir: '', sx: 0, sy: 0, start: null };
+    function getEntityCalcMinMax() {
+      return {
+        minW: 380,
+        minH: 300,
+        maxW: Math.floor(window.innerWidth * 0.96),
+        maxH: Math.floor(window.innerHeight * 0.92)
+      };
+    }
+    elements.entityCalc.querySelectorAll('.f5ext-resize').forEach((handle) => {
+      handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const r = elements.entityCalc.getBoundingClientRect();
+        rs.active = true;
+        rs.dir = handle.getAttribute('data-dir') || '';
+        rs.sx = e.clientX;
+        rs.sy = e.clientY;
+        rs.start = { left: r.left, top: r.top, width: r.width, height: r.height };
+        elements.entityCalc.style.right = 'auto';
+        elements.entityCalc.style.bottom = 'auto';
+        elements.entityCalc.style.left = r.left + 'px';
+        elements.entityCalc.style.top = r.top + 'px';
+        elements.entityCalc.style.width = r.width + 'px';
+        elements.entityCalc.style.height = r.height + 'px';
+        bringToFront(elements.entityCalc);
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!rs.active || !rs.start || !elements.entityCalc) return;
+      const dx = e.clientX - rs.sx;
+      const dy = e.clientY - rs.sy;
+      const dir = rs.dir;
+      const r0 = rs.start;
+      const mm = getEntityCalcMinMax();
+      let left = r0.left;
+      let top = r0.top;
+      let w = r0.width;
+      let h = r0.height;
+      if (dir.indexOf('e') !== -1) w = r0.width + dx;
+      if (dir.indexOf('s') !== -1) h = r0.height + dy;
+      if (dir.indexOf('w') !== -1) { w = r0.width - dx; left = r0.left + dx; }
+      if (dir.indexOf('n') !== -1) { h = r0.height - dy; top = r0.top + dy; }
+      w = clamp(w, mm.minW, mm.maxW);
+      h = clamp(h, mm.minH, mm.maxH);
+      left = clamp(left, 6, window.innerWidth - Math.max(60, w - 10));
+      top = clamp(top, 6, window.innerHeight - Math.max(60, h - 10));
+      elements.entityCalc.style.left = Math.round(left) + 'px';
+      elements.entityCalc.style.top = Math.round(top) + 'px';
+      elements.entityCalc.style.width = Math.round(w) + 'px';
+      elements.entityCalc.style.height = Math.round(h) + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!rs.active || !elements.entityCalc) return;
+      rs.active = false;
+      const rr = elements.entityCalc.getBoundingClientRect();
+      saveEntityCalcRect({
+        x: Math.round(rr.left),
+        y: Math.round(rr.top),
+        w: Math.round(rr.width),
+        h: Math.round(rr.height)
+      });
+    });
+  }
+
+  async function loadEntityCalcContext(force) {
+    const route = currentEntityRoute();
+    if (!route || !window.F5VRApi || !window.F5VRApi.fetchEntityFormulaContext) return null;
+    if (!force && entityCalcContext && entityCalcContextKey === route.key) return entityCalcContext;
+    if (entityCalcLoading && !force) return entityCalcLoading;
+    setEntityCalcStatus('Загружаю данные сущности…', 'is-progress');
+    entityCalcContextKey = route.key;
+    entityCalcLoading = window.F5VRApi.fetchEntityFormulaContext(route.root, route.id)
+      .then((ctx) => {
+        entityCalcContext = ctx;
+        setEntityCalcStatus('', '');
+        return ctx;
+      })
+      .catch((e) => {
+        entityCalcContext = null;
+        setEntityCalcStatus('Не удалось загрузить сущность: ' + (e && e.message ? e.message : String(e)), 'is-err');
+        return null;
+      })
+      .finally(() => {
+        entityCalcLoading = null;
+      });
+    return entityCalcLoading;
+  }
+
+  function entityByRoot(ctx, root) {
+    if (!ctx) return null;
+    if (root === 'lead') return ctx.lead;
+    if (root === 'contact') return ctx.contact;
+    if (root === 'company') return ctx.company;
+    return null;
+  }
+
+  function entityPluralByRoot(root) {
+    if (root === 'lead') return 'leads';
+    if (root === 'contact') return 'contacts';
+    if (root === 'company') return 'companies';
+    return '';
+  }
+
+  function normalizeEntityRefId(raw) {
+    const s = String(raw || '').trim();
+    if (/^\d+$/.test(s)) return s;
+    const m = s.match(/^id\s*(\d+)$/i);
+    return m ? m[1] : '';
+  }
+
+  function entityId(entity) {
+    return entity && entity.id != null ? String(entity.id) : '';
+  }
+
+  async function loadEntityForFormula(ctx, root, rawId, cache, errors) {
+    const id = normalizeEntityRefId(rawId);
+    if (!id) {
+      errors.push('Некорректный id сущности: ' + rawId);
+      return null;
+    }
+
+    const current = entityByRoot(ctx, root);
+    if (current && entityId(current) === id) return current;
+
+    const key = root + ':' + id;
+    if (cache[key]) return cache[key];
+
+    if (!window.F5VRApi || !window.F5VRApi.loadEntity) {
+      errors.push('API загрузки сущностей недоступен');
+      return null;
+    }
+
+    cache[key] = window.F5VRApi.loadEntity(root, id, ['contacts', 'companies', 'leads'])
+      .catch((e) => {
+        errors.push(root + '(' + id + '): ' + (e && e.message ? e.message : String(e)));
+        return null;
+      });
+    return cache[key];
+  }
+
+  function currentRootForCtx(ctx) {
+    if (!ctx || !ctx.current || !ctx.current.type) return '';
+    if (ctx.current.type === 'leads') return 'lead';
+    if (ctx.current.type === 'contacts') return 'contact';
+    if (ctx.current.type === 'companies') return 'company';
+    return '';
+  }
+
+  function linkCatalogId(link) {
+    const md = link && link.metadata ? link.metadata : {};
+    return String(md.catalog_id || md.catalogId || link.catalog_id || link.catalogId || '');
+  }
+
+  function linkEntityId(link) {
+    return String((link && (link.to_entity_id || link.entity_id || link.id)) || '');
+  }
+
+  async function findLinkedCatalogElementId(ctx, catalogId, cache) {
+    const root = currentRootForCtx(ctx);
+    const current = root ? entityByRoot(ctx, root) : null;
+    const currentId = entityId(current);
+    if (!root || !currentId || !window.F5VRApi || !window.F5VRApi.loadEntityLinks) return '';
+    const key = 'links:' + root + ':' + currentId;
+    if (!cache[key]) cache[key] = window.F5VRApi.loadEntityLinks(root, currentId).catch(() => []);
+    const links = await cache[key];
+    const matches = (links || []).filter((link) => {
+      const type = link && (link.to_entity_type || link.entity_type);
+      if (type !== 'catalog_elements') return false;
+      const cid = linkCatalogId(link);
+      return !cid || String(cid) === String(catalogId);
+    });
+    return matches.length ? linkEntityId(matches[0]) : '';
+  }
+
+  async function loadCatalogElementForFormula(ctx, selector, catalogId, cache, errors) {
+    let elementId = normalizeEntityRefId(selector);
+    if (!elementId && String(selector || '').trim().toLowerCase() === 'first') {
+      elementId = await findLinkedCatalogElementId(ctx, catalogId, cache);
+    }
+    if (!elementId) {
+      errors.push('Не найден элемент каталога ' + catalogId + ' для selector=' + selector);
+      return null;
+    }
+    const key = 'catalog:' + catalogId + ':' + elementId;
+    if (cache[key]) return cache[key];
+    if (!window.F5VRApi || !window.F5VRApi.loadCatalogElement) {
+      errors.push('API загрузки элементов каталога недоступен');
+      return null;
+    }
+    cache[key] = window.F5VRApi.loadCatalogElement(catalogId, elementId)
+      .catch((e) => {
+        errors.push('catalogElement(' + selector + ', ' + catalogId + '): ' + (e && e.message ? e.message : String(e)));
+        return null;
+      });
+    return cache[key];
+  }
+
+  function fieldMetaForRoot(root, fieldId) {
+    const plural = entityPluralByRoot(root);
+    return plural && state.fields ? state.fields[plural + ':' + fieldId] : null;
+  }
+
+  function fieldMetaForCatalog(catalogId, fieldId) {
+    return state.fields ? state.fields['catalogs:' + catalogId + ':' + fieldId] : null;
+  }
+
+  function enumLabel(meta, value, enumId) {
+    const enums = meta && meta.enums;
+    if (enums && enums.byId && enumId != null && enums.byId[String(enumId)] != null) {
+      return enums.byId[String(enumId)];
+    }
+    return value != null ? value : (enumId != null ? enumId : '');
+  }
+
+  function normalizeFieldSingleValue(v, meta) {
+    if (!v) return '';
+    const type = String((meta && meta.type) || '').toLowerCase();
+    const raw = v.value != null ? v.value : '';
+    const enumId = v.enum_id != null ? v.enum_id : '';
+
+    if (type === 'select' || type === 'multiselect' || type === 'radiobutton') {
+      return enumLabel(meta, raw, enumId);
+    }
+    if (type === 'checkbox') {
+      if (raw === true || raw === 'true' || raw === 1 || raw === '1') return '1';
+      if (raw === false || raw === 'false' || raw === 0 || raw === '0') return '0';
+      return enumLabel(meta, raw, enumId);
+    }
+    if (type === 'numeric' || type === 'price') {
+      return raw != null && raw !== '' ? toCalcNumber(raw) : '';
+    }
+    if (type === 'date' || type === 'date_time' || type === 'birthday') {
+      return raw != null ? raw : '';
+    }
+    return raw != null && raw !== '' ? raw : enumLabel(meta, raw, enumId);
+  }
+
+  function getEntityFieldValue(entity, fieldId, root, separator) {
+    const fields = entity && entity.custom_fields_values;
+    if (!Array.isArray(fields)) return '';
+    const f = fields.find((it) => String(it.field_id) === String(fieldId));
+    if (!f || !Array.isArray(f.values) || !f.values.length) return '';
+    const meta = root ? fieldMetaForRoot(root, fieldId) : null;
+    const values = f.values.map((v) => normalizeFieldSingleValue(v, meta)).filter((v) => v !== '');
+    return values.join(separator == null ? ', ' : separator);
+  }
+
+  function getCatalogElementFieldValue(element, catalogId, fieldId, separator) {
+    const fields = element && element.custom_fields_values;
+    if (!Array.isArray(fields)) return '';
+    const f = fields.find((it) => String(it.field_id) === String(fieldId));
+    if (!f || !Array.isArray(f.values) || !f.values.length) return '';
+    const meta = fieldMetaForCatalog(catalogId, fieldId);
+    const values = f.values.map((v) => normalizeFieldSingleValue(v, meta)).filter((v) => v !== '');
+    return values.join(separator == null ? ', ' : separator);
+  }
+
+  function getEntitySystemValue(entity, root, prop) {
+    if (!entity) return '';
+    const p = String(prop || '').toLowerCase();
+    if (p === 'id') return entity.id || '';
+    if (p === 'name') return entity.name || '';
+    if (root === 'lead' && (p === 'sale' || p === 'price' || p === 'budget')) return entity.price || 0;
+    if (p === 'responsible_user_id') return entity.responsible_user_id || '';
+    if (p === 'created_at') return entity.created_at || '';
+    if (p === 'updated_at') return entity.updated_at || '';
+    if (p === 'closed_at') return entity.closed_at || '';
+    if (p === 'status_id') return entity.status_id || '';
+    if (p === 'pipeline_id') return entity.pipeline_id || '';
+    if (p === 'first_name') return entity.first_name || '';
+    if (p === 'last_name') return entity.last_name || '';
+    return entity[prop] != null ? entity[prop] : '';
+  }
+
+  function fieldLabelForRoot(root, fieldId) {
+    const meta = fieldMetaForRoot(root, fieldId);
+    return (meta && meta.name) || (root + '.cf(' + fieldId + ')');
+  }
+
+  function fieldTypeForRoot(root, fieldId) {
+    const meta = fieldMetaForRoot(root, fieldId);
+    return (meta && meta.type) || '';
+  }
+
+  function fieldLabelForCatalog(catalogId, fieldId) {
+    const meta = fieldMetaForCatalog(catalogId, fieldId);
+    return (meta && meta.name) || ('catalogElement(' + catalogId + ').cf(' + fieldId + ')');
+  }
+
+  function fieldTypeForCatalog(catalogId, fieldId) {
+    const meta = fieldMetaForCatalog(catalogId, fieldId);
+    return (meta && meta.type) || '';
+  }
+
+  function toCalcNumber(value) {
+    if (value == null || value === '') return 0;
+    if (typeof value === 'number') return isFinite(value) ? value : 0;
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    const cleaned = String(value)
+      .replace(/\s+/g, '')
+      .replace(',', '.')
+      .replace(/[^0-9.+-]/g, '');
+    const n = Number(cleaned);
+    return isFinite(n) ? n : 0;
+  }
+
+  function splitModifierChain(chain) {
+    const out = [];
+    let cur = '';
+    let depth = 0;
+    const s = String(chain || '');
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '(') depth++;
+      if (ch === ')' && depth > 0) depth--;
+      if (ch === ':' && depth === 0) {
+        if (cur.trim()) out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+
+  function parseModifier(mod) {
+    const m = String(mod || '').trim().match(/^([a-zA-Z_][\w-]*)(?:\(([\s\S]*)\))?$/);
+    if (!m) return { name: String(mod || '').trim().toLowerCase(), args: [] };
+    return {
+      name: m[1].toLowerCase(),
+      args: splitArgs(m[2] || '')
+    };
+  }
+
+  function splitArgs(raw) {
+    if (raw == null || raw === '') return [];
+    const out = [];
+    let cur = '';
+    let depth = 0;
+    const s = String(raw);
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      const prev = s[i - 1];
+      if (ch === '(') depth++;
+      if (ch === ')' && depth > 0) depth--;
+      if (ch === ',' && depth === 0 && prev !== '\\') {
+        out.push(unescapeModifierArg(cur.trim()));
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(unescapeModifierArg(cur.trim()));
+    return out;
+  }
+
+  function unescapeModifierArg(s) {
+    return String(s || '')
+      .replace(/\\,/g, ',')
+      .replace(/\\\./g, '.')
+      .replace(/\\:/g, ':');
+  }
+
+  function isEmptyValue(v) {
+    return v == null || String(v).trim() === '';
+  }
+
+  function formatNumber(value, args) {
+    const n = toCalcNumber(value);
+    const decimals = args[0] !== undefined && args[0] !== '' ? Math.max(0, Number(args[0]) || 0) : 0;
+    const decSep = args[1] !== undefined ? args[1] : '.';
+    const thSep = args[2] !== undefined ? args[2] : ' ';
+    const parts = n.toFixed(decimals).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, thSep);
+    return parts.length > 1 ? parts[0] + decSep + parts[1] : parts[0];
+  }
+
+  function dateFromValue(value) {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) return value;
+    if (typeof value === 'number' || /^\d+$/.test(String(value).trim())) {
+      const n = Number(value);
+      return new Date(n > 100000000000 ? n : n * 1000);
+    }
+    const d = new Date(String(value));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function formatDate(value, fmt) {
+    const d = dateFromValue(value);
+    if (!d) return '';
+    const monthsRu = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const format = String(fmt || 'd.m.Y');
+    let out = '';
+    for (let i = 0; i < format.length; i++) {
+      const ch = format[i];
+      if (ch === '\\') {
+        i++;
+        out += format[i] || '';
+      } else if (ch === 'd') out += pad2(d.getDate());
+      else if (ch === 'j') out += String(d.getDate());
+      else if (ch === 'm') out += pad2(d.getMonth() + 1);
+      else if (ch === 'n') out += String(d.getMonth() + 1);
+      else if (ch === 'Y') out += String(d.getFullYear());
+      else if (ch === 'y') out += String(d.getFullYear()).slice(-2);
+      else if (ch === 'H') out += pad2(d.getHours());
+      else if (ch === 'i') out += pad2(d.getMinutes());
+      else if (ch === 's') out += pad2(d.getSeconds());
+      else if (ch === 'U') out += String(Math.floor(d.getTime() / 1000));
+      else if (ch === 'F') out += monthsRu[d.getMonth()];
+      else out += ch;
+    }
+    return out;
+  }
+
+  function addDatePart(date, amount, unit) {
+    const d = new Date(date.getTime());
+    const u = String(unit || '').toLowerCase();
+    if (u.indexOf('month') !== -1 || u.indexOf('меся') !== -1) d.setMonth(d.getMonth() + amount);
+    else if (u.indexOf('year') !== -1 || u.indexOf('год') !== -1 || u.indexOf('лет') !== -1) d.setFullYear(d.getFullYear() + amount);
+    else if (u.indexOf('hour') !== -1 || u.indexOf('час') !== -1) d.setHours(d.getHours() + amount);
+    else if (u.indexOf('minute') !== -1 || u.indexOf('мин') !== -1) d.setMinutes(d.getMinutes() + amount);
+    else d.setDate(d.getDate() + amount);
+    return d;
+  }
+
+  function isBasicWorkdayDate(date) {
+    if (!(date instanceof Date) || isNaN(date.getTime())) return false;
+    const day = date.getDay();
+    return day >= 1 && day <= 5;
+  }
+
+  function addBasicWorkdays(value, days, fmt) {
+    const d = dateFromValue(value);
+    if (!d) return '';
+    let left = Math.abs(Number(days) || 0);
+    const dir = (Number(days) || 0) < 0 ? -1 : 1;
+    const cur = new Date(d.getTime());
+    while (left > 0) {
+      cur.setDate(cur.getDate() + dir);
+      if (isBasicWorkdayDate(cur)) left--;
+    }
+    return formatDate(cur, fmt || 'd.m.Y');
+  }
+
+  function shiftToBasicWorkday(value, dir, fmt) {
+    const d = dateFromValue(value);
+    if (!d) return '';
+    const cur = new Date(d.getTime());
+    do {
+      cur.setDate(cur.getDate() + dir);
+    } while (!isBasicWorkdayDate(cur));
+    return formatDate(cur, fmt || 'd.m.Y');
+  }
+
+  function modifyDate(value, fmt, expr) {
+    let d = dateFromValue(value);
+    if (!d) return '';
+    const raw = String(expr || '').trim().toLowerCase();
+    if (!raw) return formatDate(d, fmt);
+    if (raw === 'last day of next month') {
+      d = new Date(d.getFullYear(), d.getMonth() + 2, 0, d.getHours(), d.getMinutes(), d.getSeconds());
+    } else if (raw === 'last day of this month') {
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 0, d.getHours(), d.getMinutes(), d.getSeconds());
+    } else if (raw === 'first day of next month') {
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1, d.getHours(), d.getMinutes(), d.getSeconds());
+    } else if (raw === 'first day of this month') {
+      d = new Date(d.getFullYear(), d.getMonth(), 1, d.getHours(), d.getMinutes(), d.getSeconds());
+    } else if (raw === 'next month') {
+      d = addDatePart(d, 1, 'month');
+    } else if (raw === 'previous month' || raw === 'last month') {
+      d = addDatePart(d, -1, 'month');
+    } else {
+      const m = raw.match(/^([+-]?\d+)\s*(day|days|день|дня|дней|month|months|месяц|месяца|месяцев|year|years|год|года|лет|hour|hours|час|часа|часов|minute|minutes|минута|минут|минуты)$/i);
+      if (m) d = addDatePart(d, Number(m[1]), m[2]);
+    }
+    return formatDate(d, fmt);
+  }
+
+  function formatDateDiff(value, args) {
+    const d1 = dateFromValue(value);
+    const d2 = dateFromValue(args[0] || Math.floor(Date.now() / 1000));
+    if (!d1 || !d2) return '';
+    let diff = Math.abs(d2.getTime() - d1.getTime());
+    const totalSeconds = Math.floor(diff / 1000);
+    const totalDays = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const months = Math.floor(totalDays / 30);
+    const days = totalDays % 30;
+    const fmt = args[1] || '%a';
+    return String(fmt)
+      .replace(/%a/g, String(totalDays))
+      .replace(/%m/g, String(months))
+      .replace(/%d/g, String(days))
+      .replace(/%h/g, String(hours))
+      .replace(/%i/g, String(minutes))
+      .replace(/%s/g, String(seconds));
+  }
+
+  function translitRu(value) {
+    const map = {
+      а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+      к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+      х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+    };
+    return String(value || '').split('').map((ch) => {
+      const low = ch.toLowerCase();
+      const tr = map[low];
+      if (tr === undefined) return ch;
+      return ch === low ? tr : tr.charAt(0).toUpperCase() + tr.slice(1);
+    }).join('');
+  }
+
+  function fioParts(value) {
+    const p = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    return { f: p[0] || '', i: p[1] || '', o: p[2] || '', raw: p.join(' ') };
+  }
+
+  function applyFio(value, args) {
+    const p = fioParts(value);
+    const part = String(args[0] || '').trim();
+    if (part === '1') return p.i || p.raw;
+    if (part === '2') return p.f || p.raw;
+    if (part === '3') return p.o || '';
+    return p.raw;
+  }
+
+  function applyFioFormat(value, args) {
+    const p = fioParts(value);
+    const fmt = args[0] || 'F I O';
+    const initials = {
+      f: p.f ? p.f.charAt(0).toUpperCase() : '',
+      i: p.i ? p.i.charAt(0).toUpperCase() : '',
+      o: p.o ? p.o.charAt(0).toUpperCase() : ''
+    };
+    return String(fmt)
+      .replace(/F/g, p.f)
+      .replace(/I/g, p.i)
+      .replace(/O/g, p.o)
+      .replace(/f/g, initials.f)
+      .replace(/i/g, initials.i)
+      .replace(/o/g, initials.o)
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function partValue(value, args) {
+    const mode = String(args[0] || 'br').toLowerCase();
+    const items = String(value || '').split(/\r?\n|,\s*/).map((s) => s.trim()).filter(Boolean);
+    if (mode === 'rn') return items.join('\r\n');
+    if (mode === 'ul') return items.map((s) => '• ' + s).join('\n');
+    if (mode === 'ol') return items.map((s, i) => (i + 1) + '. ' + s).join('\n');
+    return items.join('<br>');
+  }
+
+  function pluralIndex(n) {
+    const v = Math.abs(Math.floor(Number(n) || 0));
+    if (v % 100 >= 11 && v % 100 <= 14) return 2;
+    if (v % 10 === 1) return 0;
+    if (v % 10 >= 2 && v % 10 <= 4) return 1;
+    return 2;
+  }
+
+  function nounPlural(value, args) {
+    const n = toCalcNumber(value);
+    let forms = args;
+    if (forms.length === 1 && forms[0].indexOf('|') !== -1) forms = forms[0].split('|');
+    if (forms.length >= 3) return String(value || '0') + ' ' + (forms[pluralIndex(n)] || forms[2]);
+    if (forms.length === 1) return String(value || '0') + ' ' + forms[0];
+    return String(value || '');
+  }
+
+  function spellNumRu(value) {
+    let n = Math.floor(Math.abs(toCalcNumber(value)));
+    if (n === 0) return 'ноль';
+    const unitsM = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+    const unitsF = ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
+    const teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'];
+    const tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'];
+    const hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'];
+    const scales = [
+      ['', '', '', 'm'],
+      ['тысяча', 'тысячи', 'тысяч', 'f'],
+      ['миллион', 'миллиона', 'миллионов', 'm'],
+      ['миллиард', 'миллиарда', 'миллиардов', 'm']
+    ];
+    const words = [];
+    let scale = 0;
+    while (n > 0 && scale < scales.length) {
+      const chunk = n % 1000;
+      if (chunk) {
+        const gender = scales[scale][3];
+        const units = gender === 'f' ? unitsF : unitsM;
+        const part = [];
+        part.push(hundreds[Math.floor(chunk / 100)]);
+        const rest = chunk % 100;
+        if (rest >= 10 && rest <= 19) part.push(teens[rest - 10]);
+        else {
+          part.push(tens[Math.floor(rest / 10)]);
+          part.push(units[rest % 10]);
+        }
+        if (scale > 0) part.push(scales[scale][pluralIndex(chunk)]);
+        words.unshift(part.filter(Boolean).join(' '));
+      }
+      n = Math.floor(n / 1000);
+      scale++;
+    }
+    return (toCalcNumber(value) < 0 ? 'минус ' : '') + words.filter(Boolean).join(' ');
+  }
+
+  function currencyForms(code) {
+    const c = String(code || 'rub').toLowerCase();
+    const map = {
+      rub: { code: 'RUB', major: ['рубль', 'рубля', 'рублей'], minor: ['копейка', 'копейки', 'копеек'] },
+      rur: { code: 'RUB', major: ['рубль', 'рубля', 'рублей'], minor: ['копейка', 'копейки', 'копеек'] },
+      usd: { code: 'USD', major: ['доллар', 'доллара', 'долларов'], minor: ['цент', 'цента', 'центов'] },
+      eur: { code: 'EUR', major: ['евро', 'евро', 'евро'], minor: ['цент', 'цента', 'центов'] },
+      kzt: { code: 'KZT', major: ['тенге', 'тенге', 'тенге'], minor: ['тиын', 'тиына', 'тиынов'] },
+      uah: { code: 'UAH', major: ['гривна', 'гривны', 'гривен'], minor: ['копейка', 'копейки', 'копеек'] },
+      sum: { code: 'SUM', major: ['сум', 'сума', 'сумов'], minor: ['тийин', 'тийина', 'тийинов'] }
+    };
+    return map[c] || map.rub;
+  }
+
+  function currencyFromArgs(args, fallback) {
+    let currency = fallback || 'rub';
+    (args || []).forEach((arg) => {
+      const s = String(arg || '').trim();
+      const m = s.match(/^currency\s*=\s*([a-zA-Z_]+)$/i);
+      if (m) currency = m[1];
+      else if (/^(rub|rur|usd|eur|kzt|uah|sum)$/i.test(s)) currency = s;
+    });
+    return currency;
+  }
+
+  function moneyModeFromArgs(args) {
+    let mode = 'normal';
+    (args || []).forEach((arg) => {
+      const s = String(arg || '').trim().toLowerCase();
+      if (s === 'short' || s === 'normal' || s === 'duplication' || s === 'clarification') mode = s;
+      const m = s.match(/^format\s*=\s*(short|normal|duplication|clarification)$/);
+      if (m) mode = m[1];
+    });
+    return mode;
+  }
+
+  function moneyToParts(value) {
+    const n = Math.round(Math.abs(toCalcNumber(value)) * 100) / 100;
+    const major = Math.floor(n);
+    const minor = Math.round((n - major) * 100);
+    return { sign: toCalcNumber(value) < 0 ? -1 : 1, major: major, minor: minor };
+  }
+
+  function moneyNumericString(parts) {
+    const sign = parts.sign < 0 ? '-' : '';
+    return sign + formatNumber(parts.major + parts.minor / 100, [2, '.', ' ']);
+  }
+
+  function spellMoneyRu(value, args, defaultCurrency) {
+    const currency = currencyForms(currencyFromArgs(args, defaultCurrency));
+    const mode = moneyModeFromArgs(args);
+    const parts = moneyToParts(value);
+    const sign = parts.sign < 0 ? 'минус ' : '';
+    const shortText = moneyNumericString(parts) + ' ' + currency.code;
+    const words = sign
+      + spellNumRu(parts.major) + ' ' + currency.major[pluralIndex(parts.major)] + ' '
+      + pad2(parts.minor) + ' ' + currency.minor[pluralIndex(parts.minor)];
+    if (mode === 'short') return shortText;
+    if (mode === 'duplication') return shortText + ' (' + words + ')';
+    if (mode === 'clarification') return 'сумма прописью: ' + words;
+    return words;
+  }
+
+  function evalCondition(value, op, compare) {
+    const left = String(value == null ? '' : value);
+    const right = String(compare == null ? '' : compare);
+    const ln = toCalcNumber(left);
+    const rn = toCalcNumber(right);
+    const o = String(op || '=').toLowerCase();
+    if (o === '=' || o === '==') return left === right;
+    if (o === '!=' || o === '<>') return left !== right;
+    if (o === '>') return ln > rn;
+    if (o === '<') return ln < rn;
+    if (o === '>=') return ln >= rn;
+    if (o === '<=') return ln <= rn;
+    if (o === 'in') return right.split('||').map((s) => s.trim()).indexOf(left.trim()) !== -1;
+    if (o === 'not in') return right.split('||').map((s) => s.trim()).indexOf(left.trim()) === -1;
+    if (o === 'match') return new RegExp(right).test(left);
+    if (o === 'not match') return !new RegExp(right).test(left);
+    return false;
+  }
+
+  function applyEntityModifier(value, modifier, errors) {
+    const parsed = parseModifier(modifier);
+    const name = parsed.name;
+    const args = parsed.args;
+    try {
+      if (name === 'calc') return safeCalcExpression(value);
+      if (name === 'format') return formatNumber(value, args);
+      if (name === 'float') return toCalcNumber(value).toFixed(Math.max(0, Number(args[0]) || 0));
+      if (name === 'round') {
+        const d = Math.max(0, Number(args[0]) || 0);
+        const p = Math.pow(10, d);
+        return String(Math.round(toCalcNumber(value) * p) / p);
+      }
+      if (name === 'floor') return String(Math.floor(toCalcNumber(value)));
+      if (name === 'ceil') return String(Math.ceil(toCalcNumber(value)));
+      if (name === 'ifempty') return isEmptyValue(value) ? (args[0] || '') : value;
+      if (name === 'ifnotempty') return !isEmptyValue(value) ? (args[0] || '') : value;
+      if (name === 'if') {
+        const ok = evalCondition(value, args[0], args[1]);
+        if (ok) return args[2] !== undefined ? args[2] : value;
+        return args[3] !== undefined ? args[3] : value;
+      }
+      if (name === 'df') return formatDate(value, args[0] || 'd.m.Y');
+      if (name === 'dm') return modifyDate(value, args[0] || 'd.m.Y', args[1] || '');
+      if (name === 'date_diff') return formatDateDiff(value, args);
+      if (name === 'addworkdays') return addBasicWorkdays(value, Number(args[0]) || 0, args[1] || 'd.m.Y');
+      if (name === 'nextworkday') return shiftToBasicWorkday(value, 1, args[0] || 'd.m.Y');
+      if (name === 'previousworkday') return shiftToBasicWorkday(value, -1, args[0] || 'd.m.Y');
+      if (name === 'isworkday') {
+        const d = dateFromValue(value);
+        return d && isBasicWorkdayDate(d) ? '1' : '0';
+      }
+      if (name === 'trim') return String(value || '').trim();
+      if (name === 'lwc' || name === 'lower') return String(value || '').toLowerCase();
+      if (name === 'upc' || name === 'upper' || name === 'caps') return String(value || '').toUpperCase();
+      if (name === 'ucf' || name === 'capitalize') {
+        const s = String(value || '');
+        return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      }
+      if (name === 'length') return String(String(value || '').length);
+      if (name === 'tonumeric') return String(value || '').replace(/\D+/g, '');
+      if (name === 'replace') return args[0] ? String(value || '').split(args[0]).join(args[1] || '') : String(value || '');
+      if (name === 'slice') return String(value || '').slice(Number(args[0]) || 0, args[1] !== undefined && args[1] !== '' ? Number(args[1]) : undefined);
+      if (name === 'substr') return String(value || '').substr(Number(args[0]) || 0, args[1] !== undefined && args[1] !== '' ? Number(args[1]) : undefined);
+      if (name === 'split') {
+        const sep = args[0] === 's' ? ' ' : (args[0] || ',');
+        const arr = String(value || '').split(sep);
+        const idx = args[1] === 'end' ? arr.length - 1 : (Number(args[1]) || 0);
+        return arr[idx] != null ? arr[idx] : '';
+      }
+      if (name === 'pad_left') return String(value || '').padStart(Number(args[0]) || 0, args[1] || ' ');
+      if (name === 'pad_right') return String(value || '').padEnd(Number(args[0]) || 0, args[1] || ' ');
+      if (name === 'nbr') return String(value || '').replace(/\r?\n/g, '<br>');
+      if (name === 'translit') return translitRu(value);
+      if (name === 'fio') return applyFio(value, args);
+      if (name === 'fio_format') return applyFioFormat(value, args);
+      if (name === 'part') return partValue(value, args);
+      if (name === 'noun_plur') return nounPlural(value, args);
+      if (name === 'spell_num') return spellNumRu(value);
+      if (name === 'spell_money') return spellMoneyRu(value, args, 'rub');
+      if (name === 'spell_price') return spellMoneyRu(value, args, 'rub');
+      errors.push('Модификатор пока не поддерживается: :' + modifier);
+      return value;
+    } catch (e) {
+      errors.push('Ошибка :' + modifier + ' — ' + (e && e.message ? e.message : String(e)));
+      return '';
+    }
+  }
+
+  function applyEntityModifiers(value, chain, errors) {
+    return splitModifierChain(chain).reduce((acc, mod) => applyEntityModifier(acc, mod, errors), value);
+  }
+
+  function safeCalcExpression(expr) {
+    const normalized = String(expr || '').replace(/\s+/g, '').replace(/,/g, '.');
+    if (!/^[0-9+\-*/().\s]+$/.test(normalized)) {
+      throw new Error('В выражении остались неподдерживаемые символы: ' + expr);
+    }
+    let pos = 0;
+    function skipSpaces() {
+      while (/\s/.test(normalized[pos] || '')) pos++;
+    }
+    function parseNumber() {
+      skipSpaces();
+      const start = pos;
+      while (/[0-9.]/.test(normalized[pos] || '')) pos++;
+      if (start === pos) throw new Error('Ожидалось число в выражении: ' + expr);
+      const n = Number(normalized.slice(start, pos));
+      if (!isFinite(n)) throw new Error('Некорректное число в выражении: ' + expr);
+      return n;
+    }
+    function parseFactor() {
+      skipSpaces();
+      const ch = normalized[pos];
+      if (ch === '+') { pos++; return parseFactor(); }
+      if (ch === '-') { pos++; return -parseFactor(); }
+      if (ch === '(') {
+        pos++;
+        const val = parseExpression();
+        skipSpaces();
+        if (normalized[pos] !== ')') throw new Error('Не закрыта скобка в выражении: ' + expr);
+        pos++;
+        return val;
+      }
+      return parseNumber();
+    }
+    function parseTerm() {
+      let val = parseFactor();
+      while (true) {
+        skipSpaces();
+        const op = normalized[pos];
+        if (op !== '*' && op !== '/') break;
+        pos++;
+        const rhs = parseFactor();
+        val = op === '*' ? val * rhs : val / rhs;
+      }
+      return val;
+    }
+    function parseExpression() {
+      let val = parseTerm();
+      while (true) {
+        skipSpaces();
+        const op = normalized[pos];
+        if (op !== '+' && op !== '-') break;
+        pos++;
+        const rhs = parseTerm();
+        val = op === '+' ? val + rhs : val - rhs;
+      }
+      return val;
+    }
+    const result = parseExpression();
+    skipSpaces();
+    if (pos < normalized.length) throw new Error('Лишний символ в выражении: ' + normalized[pos]);
+    if (!isFinite(result)) throw new Error('Некорректный результат расчёта');
+    return result;
+  }
+
+  async function replaceAsync(input, regex, replacer) {
+    const s = String(input || '');
+    let out = '';
+    let last = 0;
+    let m;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(s)) !== null) {
+      out += s.slice(last, m.index);
+      out += await replacer(m);
+      last = regex.lastIndex;
+    }
+    out += s.slice(last);
+    return out;
+  }
+
+  async function replaceEntityRefsOnce(text, ctx, vars, errors, cache) {
+    let changed = false;
+    let out = await replaceAsync(text, /\{\{\s*catalogElement\(([^{}()]+)\s*,\s*(\d+)\)\.cf\((\d+)\)((?::[^{}]+)*)\s*\}\}/g, async (m) => {
+      const selector = m[1];
+      const catalogId = m[2];
+      const fieldId = m[3];
+      const chain = m[4] || '';
+      const element = await loadCatalogElementForFormula(ctx, selector, catalogId, cache, errors);
+      const raw = getCatalogElementFieldValue(element, catalogId, fieldId);
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: 'catalogElement(' + selector + ', ' + catalogId + ').cf(' + fieldId + ')' + (chain || ''),
+        label: fieldLabelForCatalog(catalogId, fieldId),
+        type: fieldTypeForCatalog(catalogId, fieldId),
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: !element
+      });
+      return String(value);
+    });
+
+    out = await replaceAsync(out, /\{\{\s*(lead|contact|company)\(([^{}()]+)\)\.cfm?\((\d+)\)((?::[^{}]+)*)\s*\}\}/g, async (m) => {
+      const root = m[1];
+      const entityRefId = m[2];
+      const fieldId = m[3];
+      const chain = m[4] || '';
+      const entity = await loadEntityForFormula(ctx, root, entityRefId, cache, errors);
+      const isMulti = m[0].indexOf('.cfm(') !== -1;
+      const raw = getEntityFieldValue(entity, fieldId, root, isMulti ? '\n' : ', ');
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: root + '(' + entityRefId + ').' + (isMulti ? 'cfm' : 'cf') + '(' + fieldId + ')' + (chain || ''),
+        label: fieldLabelForRoot(root, fieldId),
+        type: fieldTypeForRoot(root, fieldId),
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: !entity
+      });
+      return String(value);
+    });
+
+    out = await replaceAsync(out, /\{\{\s*(lead|contact|company)\(([^{}()]+)\)\.([a-zA-Z_][\w]*)(?::([^{}]+))?\s*\}\}/g, async (m) => {
+      const root = m[1];
+      const entityRefId = m[2];
+      const prop = m[3];
+      const chain = m[4] || '';
+      const entity = await loadEntityForFormula(ctx, root, entityRefId, cache, errors);
+      const raw = getEntitySystemValue(entity, root, prop);
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: root + '(' + entityRefId + ').' + prop + (chain ? ':' + chain : ''),
+        label: root + '(' + entityRefId + ').' + prop,
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: !entity
+      });
+      return String(value);
+    });
+
+    out = out.replace(/\{\{\s*(lead|contact|company)\.cfm?\((\d+)\)((?::[^{}]+)*)\s*\}\}/g, (m, root, fieldId, chain) => {
+      const entity = entityByRoot(ctx, root);
+      const isMulti = m.indexOf('.cfm(') !== -1;
+      const raw = getEntityFieldValue(entity, fieldId, root, isMulti ? '\n' : ', ');
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: root + '.' + (isMulti ? 'cfm' : 'cf') + '(' + fieldId + ')' + (chain || ''),
+        label: fieldLabelForRoot(root, fieldId),
+        type: fieldTypeForRoot(root, fieldId),
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: !entity
+      });
+      return String(value);
+    });
+
+    out = out.replace(/\{\{\s*(lead|contact|company)\.([a-zA-Z_][\w]*)(?::([^{}]+))?\s*\}\}/g, (m, root, prop, chain) => {
+      const entity = entityByRoot(ctx, root);
+      const raw = getEntitySystemValue(entity, root, prop);
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: root + '.' + prop + (chain ? ':' + chain : ''),
+        label: root + '.' + prop,
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: !entity
+      });
+      return String(value);
+    });
+
+    out = out.replace(/\{\{\s*date\.now(?::([^{}]+))?\s*\}\}/g, (m, chain) => {
+      const raw = Math.floor(Date.now() / 1000);
+      const value = applyEntityModifiers(raw, chain || '', errors);
+      const num = toCalcNumber(value);
+      changed = true;
+      vars.push({
+        token: 'date.now' + (chain ? ':' + chain : ''),
+        label: 'Текущая дата',
+        raw: raw,
+        value: value,
+        number: num,
+        missingEntity: false
+      });
+      return String(value);
+    });
+
+    return { text: out, changed: changed };
+  }
+
+  async function evaluateEntityCalcTemplate(text, ctx) {
+    const vars = [];
+    const errors = [];
+    const cache = {};
+    let substituted = String(text || '');
+    for (let i = 0; i < 8; i++) {
+      const pass = await replaceEntityRefsOnce(substituted, ctx, vars, errors, cache);
+      substituted = pass.text;
+      if (!pass.changed) break;
+    }
+
+    let calcCount = 0;
+    let result = substituted.replace(/\{\{\s*\(([^{}]+)\)\s*:calc\s*\}\}/g, (m, expr) => {
+      calcCount++;
+      try {
+        const value = safeCalcExpression(expr);
+        return String(value);
+      } catch (e) {
+        errors.push(e && e.message ? e.message : String(e));
+        return '[calc error]';
+      }
+    });
+
+    if (!calcCount && /\{\{[^}]*:calc/.test(text || '')) {
+      errors.push('Пока поддерживается только формат {{( ... ):calc}}');
+    }
+    return { result: result, substituted: substituted, vars: vars, errors: errors };
+  }
+
+  function countSubstr(source, needle) {
+    return (String(source || '').match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+  }
+
+  function validateEntityCalcResult(source, res) {
+    const errors = [];
+    const input = String(source || '');
+    if (!input.trim()) errors.push('Введите формулу для проверки.');
+
+    const openCount = countSubstr(input, '{{');
+    const closeCount = countSubstr(input, '}}');
+    if (openCount !== closeCount) {
+      errors.push('Количество открывающих {{ и закрывающих }} скобок не совпадает.');
+    }
+
+    (res.errors || []).forEach((e) => errors.push(e));
+
+    const unresolved = String(res.result || '').match(/\{\{[^{}]+\}\}/g) || [];
+    unresolved.forEach((token) => errors.push('Не удалось распознать переменную: ' + token));
+
+    if (input.indexOf('{{') !== -1 && !(res.vars || []).length && !unresolved.length) {
+      errors.push('Переменные не найдены или формат пока не поддерживается.');
+    }
+
+    if (String(res.result || '').indexOf('[calc error]') !== -1) {
+      errors.push('Ошибка расчёта :calc. Проверьте арифметическое выражение.');
+    }
+
+    return errors;
+  }
+
+  async function evaluateEntityCalcInput() {
+    if (!elements.entityCalcInput || !elements.entityCalcResult) return;
+    if (!entityCalcContext) {
+      elements.entityCalcResult.textContent = 'Сначала загрузите данные сущности.';
+      setEntityCalcErrors(['Сначала нажмите «Проверить», чтобы загрузить данные сущности.']);
+      return;
+    }
+    const source = elements.entityCalcInput.value || '';
+    const res = await evaluateEntityCalcTemplate(source, entityCalcContext);
+    setEntityCalcErrors(validateEntityCalcResult(source, res));
+    elements.entityCalcResult.textContent = res.result;
+  }
+
+  function syncEntityCalc() {
+    if (isEntityCalcActive()) startEntityCalcObserver();
+    else {
+      stopEntityCalcObserver();
+      removeEntityWidgetButton();
+      destroyEntityCalcPanel();
     }
   }
 
@@ -687,7 +2092,7 @@
   function escapeHtml(s) { return window.F5VRParser.escapeHtml(s); }
 
   function removeOrphanDom() {
-    const sel = '#f5ext-launcher-wrap, #f5ext-launcher, #f5ext-panel, #f5ext-vars, #f5ext-ms, .f5ext-tooltip';
+    const sel = '#f5ext-launcher-wrap, #f5ext-launcher, #f5ext-panel, #f5ext-vars, #f5ext-ms, #f5ext-entity-calc, .f5ext-entity-widget-btn, .f5ext-tooltip';
     document.querySelectorAll(sel).forEach((n) => {
       try { n.remove(); } catch (e) {}
     });
@@ -856,6 +2261,8 @@
     try { if (elements.panel && elements.panel.parentNode) elements.panel.parentNode.removeChild(elements.panel); } catch (e) {}
     try { if (elements.vars && elements.vars.parentNode) elements.vars.parentNode.removeChild(elements.vars); } catch (e) {}
     destroyMinesweeperPanel();
+    destroyEntityCalcPanel();
+    removeEntityWidgetButton();
     elements.msDockBtn = null;
     try { if (elements.tip && elements.tip.parentNode) elements.tip.parentNode.removeChild(elements.tip); } catch (e) {}
     elements = createEmptyElements();
@@ -920,6 +2327,7 @@
     if (elements.panel) elements.panel.classList.remove('is-front');
     if (elements.vars) elements.vars.classList.remove('is-front');
     if (elements.ms) elements.ms.classList.remove('is-front');
+    if (elements.entityCalc) elements.entityCalc.classList.remove('is-front');
     el.classList.add('is-front');
   }
 
