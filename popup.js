@@ -202,6 +202,9 @@ async function renderExtrasList() {
   const savedSheetsEmployee = window.F5VRExtras.getSheetsEmployeeName
     ? window.F5VRExtras.getSheetsEmployeeName(extras)
     : ((extras.settings && extras.settings[sheetsId] && extras.settings[sheetsId].employeeName) || '');
+  const savedDeptImport = window.F5VRExtras.getSheetsDeptImportSettings
+    ? window.F5VRExtras.getSheetsDeptImportSettings(extras)
+    : { importUrl: '', importSecret: '', sheetTab: '' };
   listEl.innerHTML = '';
   if (emptyEl) emptyEl.hidden = items.length > 0;
   items.forEach((it) => {
@@ -262,7 +265,27 @@ async function renderExtrasList() {
         +   'value="' + escapeHtml(savedSheetsEmployee) + '" />'
         +   '<button type="button" class="btn" id="sheets-employee-save">Сохранить</button>'
         + '</div>'
-        + '<div class="extras-settings-hint">Если сотрудник найден в разноске, выбор при клике пропускается.</div>';
+        + '<div class="extras-settings-hint">Если сотрудник найден в разноске, выбор при клике пропускается.</div>'
+        + '<div class="extras-settings-label">Импорт отдела в Google Sheet</div>'
+        + '<div class="extras-gif-row">'
+        +   '<input type="url" class="extras-gif-input" id="dept-import-url" '
+        +   'placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false" autocomplete="off" '
+        +   'value="' + escapeHtml(savedDeptImport.importUrl || '') + '" />'
+        + '</div>'
+        + '<div class="extras-settings-label">Секретный токен</div>'
+        + '<div class="extras-gif-row">'
+        +   '<input type="password" class="extras-gif-input" id="dept-import-secret" '
+        +   'placeholder="любая длинная строка" spellcheck="false" autocomplete="off" '
+        +   'value="' + escapeHtml(savedDeptImport.importSecret || '') + '" />'
+        + '</div>'
+        + '<div class="extras-settings-label">Имя листа (необязательно)</div>'
+        + '<div class="extras-gif-row">'
+        +   '<input type="text" class="extras-gif-input" id="dept-import-tab" '
+        +   'placeholder="Разноска" spellcheck="false" autocomplete="off" '
+        +   'value="' + escapeHtml(savedDeptImport.sheetTab || '') + '" />'
+        +   '<button type="button" class="btn" id="dept-import-save">Сохранить</button>'
+        + '</div>'
+        + '<div class="extras-settings-hint">Скрипт для таблицы: private/sheets-dept-import.gs</div>';
       block.appendChild(settings);
     }
 
@@ -294,6 +317,27 @@ async function onSheetsEmployeeSave() {
   await window.F5VRExtras.setFeatureSetting(sheetsId, 'employeeName', normalized);
   if (input) input.value = normalized;
   setExtrasMsg(normalized ? 'Сотрудник сохранён.' : 'Сотрудник по умолчанию очищен.', 'is-ok');
+  const tab = await getActiveTab();
+  await notifyExtrasChanged(tab);
+}
+
+async function onDeptImportSave() {
+  if (!window.F5VRExtras) return;
+  const sheetsId = window.F5VRExtras.FEATURE_SHEETS_EXPORT || 'sh03';
+  const urlInput = $('#dept-import-url');
+  const secretInput = $('#dept-import-secret');
+  const tabInput = $('#dept-import-tab');
+  const importUrl = urlInput ? String(urlInput.value || '').trim() : '';
+  const importSecret = secretInput ? String(secretInput.value || '').trim() : '';
+  const sheetTab = tabInput ? String(tabInput.value || '').trim() : '';
+  if (importUrl && !/^https:\/\//i.test(importUrl)) {
+    setExtrasMsg('URL должен начинаться с https://', 'is-err');
+    return;
+  }
+  await window.F5VRExtras.setFeatureSetting(sheetsId, 'importUrl', importUrl);
+  await window.F5VRExtras.setFeatureSetting(sheetsId, 'importSecret', importSecret);
+  await window.F5VRExtras.setFeatureSetting(sheetsId, 'sheetTab', sheetTab);
+  setExtrasMsg('Настройки импорта сохранены.', 'is-ok');
   const tab = await getActiveTab();
   await notifyExtrasChanged(tab);
 }
@@ -611,6 +655,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (t && t.id === 'sheets-employee-save') {
         e.preventDefault();
         onSheetsEmployeeSave();
+      }
+      if (t && t.id === 'dept-import-save') {
+        e.preventDefault();
+        onDeptImportSave();
       }
     });
     extrasList.addEventListener('keydown', (e) => {

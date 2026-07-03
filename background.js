@@ -9,8 +9,8 @@
  *
  * Хранится:
  *   chrome.storage.local["update"] = {
- *     availableVersion: "2.1.6",
- *     currentVersion:   "2.1.6",
+ *     availableVersion: "2.1.7",
+ *     currentVersion:   "2.1.7",
  *     checkedAt:        <ms>,
  *     hasUpdate:        true | false,
  *     error:            null | string
@@ -94,10 +94,48 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) checkForUpdates();
 });
 
+async function postAppsScriptWebApp(url, payload) {
+  const body = JSON.stringify(payload || {});
+  // Apps Script: POST выполняет doPost, затем 302 → GET на echo-URL с JSON-ответом.
+  // redirect:'follow' в service worker сам делает GET; manual ломается (opaque redirect).
+  const resp = await fetch(String(url || ''), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+    redirect: 'follow',
+    cache: 'no-store'
+  });
+  const text = await resp.text();
+  if (/^\s*</.test(text)) {
+    throw new Error('Сервер вернул HTML вместо JSON. Проверьте URL и развертывание Apps Script.');
+  }
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Сервер вернул некорректный ответ.');
+  }
+  if (!resp.ok || !data || data.ok === false) {
+    throw new Error((data && data.error) || ('HTTP ' + resp.status + ' при импорте.'));
+  }
+  return data;
+}
+
 // Ручная проверка из попапа: { type: 'F5VR_CHECK_UPDATES' } -> { hasUpdate, availableVersion }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'F5VR_CHECK_UPDATES') {
     checkForUpdates().then((res) => sendResponse(res));
+    return true;
+  }
+  if (msg && msg.type === 'F5VR_SHEETS_DEPT_IMPORT') {
+    postAppsScriptWebApp(msg.url, msg.payload)
+      .then((res) => sendResponse(res))
+      .catch((err) => {
+        sendResponse({
+          ok: false,
+          error: err && err.message ? err.message : String(err)
+        });
+      });
     return true;
   }
 });

@@ -2088,12 +2088,25 @@
     { key: 'accrual_hours', title: 'Часов к начислению' },
     { key: 'employee_user', title: 'Начислено сотруднику' }
   ];
+  const SHEETS_DEPT_EMPLOYEES = [
+    'Губкин Алексей',
+    'Роман Федоров',
+    'Сергеев Роман',
+    'Маколкин Максим'
+  ];
 
   function isSheetsExportActive() {
     const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_SHEETS_EXPORT;
     return window.F5VRExtras
       && featureId
       && window.F5VRExtras.isFeatureEnabled(featureId, state.extras);
+  }
+
+  function getSheetsDeptImportSettings() {
+    if (window.F5VRExtras && window.F5VRExtras.getSheetsDeptImportSettings) {
+      return window.F5VRExtras.getSheetsDeptImportSettings(state.extras);
+    }
+    return { importUrl: '', importSecret: '', sheetTab: '' };
   }
 
   function isSheetsPage() {
@@ -2237,6 +2250,59 @@
     const a = normalizeSheetsEmployeeName(actual).toLowerCase();
     const e = normalizeSheetsEmployeeName(expected).toLowerCase();
     return !e || a === e;
+  }
+
+  function filterSheetsDeptRows(allRows) {
+    const order = SHEETS_DEPT_EMPLOYEES.map((name) => normalizeSheetsEmployeeName(name).toLowerCase());
+    const wanted = new Set(order);
+    return (allRows || []).filter((cells) => {
+      return wanted.has(normalizeSheetsEmployeeName(cells[4]).toLowerCase());
+    }).sort((a, b) => {
+      const ai = order.indexOf(normalizeSheetsEmployeeName(a[4]).toLowerCase());
+      const bi = order.indexOf(normalizeSheetsEmployeeName(b[4]).toLowerCase());
+      if (ai !== bi) return ai - bi;
+      return String(a[0] || '').localeCompare(String(b[0] || ''), 'ru');
+    });
+  }
+
+  function sheetsDeptImportPayload(rows, raznoskaId, raznoskaLabel) {
+    return {
+      secret: getSheetsDeptImportSettings().importSecret || '',
+      sheetTab: getSheetsDeptImportSettings().sheetTab || '',
+      raznoskaId: String(raznoskaId || ''),
+      title: String(raznoskaLabel || raznoskaId || 'Разноска'),
+      headers: SHEETS_EXPORT_COLUMNS.map((col) => col.title),
+      employees: SHEETS_DEPT_EMPLOYEES.slice(),
+      rows: rows.map((cells) => cells.slice()),
+      totalHours: sheetsRowsTotalHours(rows)
+    };
+  }
+
+  async function runSheetsDeptImport(raznoskaId, raznoskaLabel) {
+    const settings = getSheetsDeptImportSettings();
+    if (!settings.importUrl) throw new Error('Укажите URL веб-приложения в настройках расширения.');
+    const allRows = await extractSheetsRows(raznoskaId);
+    const rows = filterSheetsDeptRows(allRows);
+    if (!rows.length) throw new Error('Не нашёл строк для сотрудников отдела в этой разноске.');
+    const payload = sheetsDeptImportPayload(rows, raznoskaId, raznoskaLabel);
+    const data = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: 'F5VR_SHEETS_DEPT_IMPORT',
+        url: settings.importUrl,
+        payload: payload
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'Failed to fetch'));
+          return;
+        }
+        if (!response || response.ok === false) {
+          reject(new Error((response && response.error) || 'Ошибка импорта.'));
+          return;
+        }
+        resolve(response);
+      });
+    });
+    return data;
   }
 
   function currentRaznoskaId() {
@@ -2580,7 +2646,7 @@
         btn.addEventListener('click', () => {
           closeSheetsPicker();
           const rows = allRows.filter((cells) => cells[4] === name);
-          openSheetsModal(buildSheetsTsv(rows), rows.length, rows);
+          openSheetsModal(buildSheetsTsv(rows), rows.length, rows, { raznoskaId: raznoskaId });
         });
         body.appendChild(btn);
       });
@@ -2608,9 +2674,11 @@
     });
   }
 
-  function openSheetsModal(text, rowCount, rows) {
+  function openSheetsModal(text, rowCount, rows, meta) {
+    meta = meta || {};
     ensureStyles();
     closeSheetsModal();
+    const showDeptImport = isSheetsExportActive();
     const modal = document.createElement('div');
     modal.id = 'f5ext-sheets-modal';
     modal.className = 'f5ext-sheets-modal';
@@ -2624,6 +2692,10 @@
       +     '<div class="f5ext-sheets-table-wrap" tabindex="0"></div>'
       +     '<div class="f5ext-sheets-actions">'
       +       '<button type="button" class="f5ext-sheets-copy js-sheets-copy">Копировать</button>'
+      +       (showDeptImport
+        ? '<button type="button" class="f5ext-sheets-dept-import js-sheets-dept-import">Импортировать для отдела</button>'
+        : '')
+      +       '<span class="js-sheets-import-status"></span>'
       +     '</div>'
       +   '</div>'
       + '</div>';
@@ -2647,6 +2719,30 @@
       };
       copyToClipboard(plain).then(done);
     });
+    const deptBtn = modal.querySelector('.js-sheets-dept-import');
+    if (deptBtn) {
+      deptBtn.addEventListener('click', () => {
+        const statusEl = modal.querySelector('.js-sheets-import-status');
+        const raznoskaId = meta.raznoskaId || currentRaznoskaId();
+        if (!raznoskaId) {
+          if (statusEl) statusEl.textContent = 'Не удалось определить разноску.';
+          return;
+        }
+        deptBtn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Импорт…';
+        runSheetsDeptImport(raznoskaId, meta.raznoskaLabel).then((result) => {
+          deptBtn.disabled = false;
+          if (statusEl) {
+            statusEl.textContent = (result && result.message)
+              ? result.message
+              : ('Готово · ' + (result && result.rowCount ? result.rowCount + ' строк' : 'импортировано'));
+          }
+        }).catch((err) => {
+          deptBtn.disabled = false;
+          if (statusEl) statusEl.textContent = err && err.message ? err.message : 'Ошибка импорта.';
+        });
+      });
+    }
   }
 
   function openSheetsResultLoadingModal() {
@@ -2694,7 +2790,7 @@
       clearTimeout(resultLoadingTimer);
       const rows = allRows.filter((cells) => sheetsEmployeeMatches(cells[4], savedEmployee));
       if (rows.length) {
-        openSheetsModal(buildSheetsTsv(rows), rows.length, rows);
+        openSheetsModal(buildSheetsTsv(rows), rows.length, rows, { raznoskaId: raznoskaId });
       } else {
         if (resultLoadingShown) closeSheetsModal();
         openSheetsEmployeePicker('', allRows, raznoskaId);

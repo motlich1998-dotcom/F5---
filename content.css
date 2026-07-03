@@ -1151,6 +1151,31 @@
   font: 800 12px/30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 }
 .f5ext-sheets-copy:hover { background: #111827; }
+.f5ext-sheets-dept-import {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  cursor: pointer;
+  font: 800 12px/30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  background: linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #3b82f6, #a855f7, #ef4444);
+  background-size: 300% 100%;
+  animation: f5ext-sheets-rainbow 4s linear infinite;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+}
+.f5ext-sheets-dept-import:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.f5ext-sheets-dept-import:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+@keyframes f5ext-sheets-rainbow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
 .f5ext-sheets-actions span {
   color: #64748b;
   font-size: 11px;
