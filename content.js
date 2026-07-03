@@ -15,6 +15,10 @@
   const HOST = location.hostname;
   if (!HOST) return;
 
+  function isAmoLikeHost() {
+    return /\.amocrm\.(ru|com)$/i.test(HOST) || /\.kommo\.com$/i.test(HOST || '');
+  }
+
   const state = {
     fields: {},
     fetchedAt: 0,
@@ -112,6 +116,9 @@
       },
       onEntityCalc: function () {
         syncEntityCalc();
+      },
+      onSheetsExport: function () {
+        syncSheetsExport();
       }
     });
   }
@@ -585,6 +592,8 @@
   let entityCalcContext = null;
   let entityCalcContextKey = '';
   let entityCalcLoading = null;
+  let sheetsExportObserver = null;
+  let sheetsExportScanTimer = null;
 
   function isEntityCalcActive() {
     const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_ENTITY_CALC;
@@ -2071,6 +2080,352 @@
     }
   }
 
+  // -------- Sheets export (доп. функция → текст из таблицы разноски) --------
+  const SHEETS_EXPORT_COLUMNS = [
+    { key: 'date', title: 'Дата' },
+    { key: 'contractor', title: 'Контрагент' },
+    { key: 'creator_user', title: 'Создатель счета' },
+    { key: 'accrual_hours', title: 'Часов к начислению' },
+    { key: 'employee_user', title: 'Начислено сотруднику' }
+  ];
+
+  function isSheetsExportActive() {
+    const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_SHEETS_EXPORT;
+    return window.F5VRExtras
+      && featureId
+      && window.F5VRExtras.isFeatureEnabled(featureId, state.extras);
+  }
+
+  function isSheetsPage() {
+    if (!document.body) return false;
+    const text = (document.body.innerText || '').replace(/\s+/g, ' ');
+    const hasTitle = text.indexOf('Система разноса счетов') !== -1;
+    const hasTabs = text.indexOf('Приход компании') !== -1 && text.indexOf('Разноска по отделу') !== -1;
+    return hasTitle || hasTabs || hasSheetsDataTable();
+  }
+
+  function hasSheetsDataTable() {
+    const keys = ['date', 'contractor', 'creator_user', 'accrual_hours', 'employee_user'];
+    const rows = Array.from(document.querySelectorAll('tr[data-row-uuid]'));
+    return rows.some((row) => keys.every((key) => row.querySelector('td[data-column-key="' + key + '"]')));
+  }
+
+  function isDepartmentRaznoskaActive() {
+    const holder = document.getElementById('departmentRaznoskaTabButton');
+    if (holder) {
+      const btn = holder.querySelector('.tab') || holder;
+      if (holder.classList.contains('active') || btn.classList.contains('active')) return true;
+      const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+      const bg = style && style.backgroundColor ? style.backgroundColor : '';
+      const rgb = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      const isDarkActiveBg = rgb && ((Number(rgb[1]) + Number(rgb[2]) + Number(rgb[3])) / 3) < 210;
+      if (isDarkActiveBg) {
+        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text.indexOf('Разноска по отделу') !== -1) return true;
+      }
+    }
+    const activeTabs = Array.from(document.querySelectorAll('.tab.active, .tab.is-active, .active .tab'));
+    return activeTabs.some((el) => (el.textContent || '').replace(/\s+/g, ' ').trim().indexOf('Разноска по отделу') !== -1);
+  }
+
+  function findSheetsNavHost() {
+    const holder = document.getElementById('departmentRaznoskaTabButton');
+    if (holder && holder.parentElement) return holder.parentElement;
+    return null;
+  }
+
+  function removeSheetsPageButton() {
+    document.querySelectorAll('.f5ext-sheets-tab-wrap, .f5ext-sheets-page-btn').forEach((btn) => {
+      try { btn.remove(); } catch (e) {}
+    });
+  }
+
+  function createSheetsPageButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tab f5ext-sheets-page-btn';
+    btn.textContent = 'Моя разноска';
+    btn.title = 'Получить данные по разноске по выбранному сотруднику';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSheetsEmployeePicker();
+    });
+    return btn;
+  }
+
+  function syncSheetsPageButton() {
+    if (!isSheetsExportActive() || !isSheetsPage() || !isDepartmentRaznoskaActive() || !hasSheetsDataTable()) {
+      removeSheetsPageButton();
+      return;
+    }
+    ensureStyles();
+    if (document.querySelector('.f5ext-sheets-page-btn')) return;
+    const btn = createSheetsPageButton();
+    const host = findSheetsNavHost();
+    if (!host) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tab-with-dropdown f5ext-sheets-tab-wrap';
+    wrap.appendChild(btn);
+    host.appendChild(wrap);
+  }
+
+  function scheduleSheetsExportScan() {
+    if (!isSheetsExportActive()) return;
+    if (sheetsExportScanTimer) clearTimeout(sheetsExportScanTimer);
+    sheetsExportScanTimer = setTimeout(() => {
+      sheetsExportScanTimer = null;
+      syncSheetsPageButton();
+    }, 160);
+  }
+
+  function startSheetsExportObserver() {
+    stopSheetsExportObserver();
+    if (!document.body) return;
+    ensureStyles();
+    syncSheetsPageButton();
+    sheetsExportObserver = new MutationObserver(scheduleSheetsExportScan);
+    sheetsExportObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function stopSheetsExportObserver() {
+    if (sheetsExportObserver) {
+      sheetsExportObserver.disconnect();
+      sheetsExportObserver = null;
+    }
+    if (sheetsExportScanTimer) {
+      clearTimeout(sheetsExportScanTimer);
+      sheetsExportScanTimer = null;
+    }
+    removeSheetsPageButton();
+  }
+
+  function syncSheetsExport() {
+    if (isSheetsExportActive()) startSheetsExportObserver();
+    else stopSheetsExportObserver();
+  }
+
+  function formatIsoDateRu(value) {
+    const s = String(value || '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? (m[3] + '.' + m[2] + '.' + m[1]) : s;
+  }
+
+  function sheetsCellText(row, key) {
+    const cell = row.querySelector('td[data-column-key="' + key + '"]');
+    if (!cell) return '';
+    const input = cell.querySelector('input, textarea, select');
+    let value = '';
+    if (input) {
+      value = input.getAttribute('data-display-value') || input.value || input.getAttribute('data-last-value') || '';
+    } else {
+      value = cell.textContent || '';
+    }
+    value = String(value).replace(/\s+/g, ' ').trim();
+    if (key === 'date') value = formatIsoDateRu(value);
+    if (key === 'accrual_hours') value = value.replace('.', ',');
+    return value;
+  }
+
+  function extractSheetsRowsFromDom(employeeName) {
+    const rows = Array.from(document.querySelectorAll('tr[data-row-uuid]'))
+      .filter((row) => SHEETS_EXPORT_COLUMNS.some((col) => row.querySelector('td[data-column-key="' + col.key + '"]')));
+    return rows.map((row) => SHEETS_EXPORT_COLUMNS.map((col) => sheetsCellText(row, col.key)))
+      .filter((cells) => cells.some(Boolean))
+      .filter((cells) => !employeeName || cells[4] === employeeName);
+  }
+
+  function currentRaznoskaId() {
+    const m = location.pathname.match(/\/distdeparts\/(?:all\/)?([^/?#]+)/);
+    return m && m[1] && m[1] !== 'pivot' && m[1] !== 'plan' && m[1] !== 'analyze' ? m[1] : '';
+  }
+
+  function pageAuthToken() {
+    try {
+      const fromStorage = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (fromStorage) return fromStorage;
+    } catch (e) {}
+    const m = String(document.cookie || '').match(/(?:^|;\s*)token=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function sheetsApiRowToCells(row) {
+    return [
+      formatIsoDateRu(row && row[1]),
+      String((row && row[3]) || '').trim(),
+      String((row && row[4]) || '').trim(),
+      String((row && row[20]) || '').trim().replace('.', ','),
+      String((row && row[21]) || '').trim()
+    ];
+  }
+
+  async function fetchSheetsApiPage(page, limit) {
+    const id = currentRaznoskaId();
+    if (!id) throw new Error('Не удалось определить id разноски из URL.');
+    const token = pageAuthToken();
+    const headers = { Accept: 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const url = '/api/raznoskas/' + encodeURIComponent(id)
+      + '/data?page=' + encodeURIComponent(page)
+      + '&limit=' + encodeURIComponent(limit)
+      + '&t=' + Date.now()
+      + '&isDepartmentView=true';
+    const resp = await fetch(url, { credentials: 'include', headers: headers });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ' при загрузке страницы ' + page);
+    return resp.json();
+  }
+
+  async function extractSheetsRowsFromApi(employeeName) {
+    const limit = 200;
+    const first = await fetchSheetsApiPage(1, limit);
+    const pagination = first && first.pagination ? first.pagination : {};
+    const totalPages = Math.max(1, Number(pagination.totalPages) || 1);
+    let rawRows = Array.isArray(first.data) ? first.data.slice() : [];
+    for (let page = 2; page <= totalPages; page++) {
+      const next = await fetchSheetsApiPage(page, limit);
+      if (next && Array.isArray(next.data)) rawRows = rawRows.concat(next.data);
+    }
+    return rawRows.map(sheetsApiRowToCells)
+      .filter((cells) => cells.some(Boolean))
+      .filter((cells) => !employeeName || cells[4] === employeeName);
+  }
+
+  async function extractSheetsRows(employeeName) {
+    try {
+      const rows = await extractSheetsRowsFromApi(employeeName);
+      if (rows.length) return rows;
+    } catch (e) {}
+    return extractSheetsRowsFromDom(employeeName);
+  }
+
+  function buildSheetsTsv(rows) {
+    const header = SHEETS_EXPORT_COLUMNS.map((col) => col.title);
+    return [header].concat(rows).map((cells) => cells.join('\t')).join('\n');
+  }
+
+  function buildSheetsHtmlTable(rows) {
+    const head = '<thead><tr>' + SHEETS_EXPORT_COLUMNS.map((col) => '<th>' + escapeHtml(col.title) + '</th>').join('') + '</tr></thead>';
+    const body = '<tbody>' + rows.map((cells) => {
+      return '<tr>' + cells.map((cell) => '<td>' + escapeHtml(cell) + '</td>').join('') + '</tr>';
+    }).join('') + '</tbody>';
+    return '<table class="f5ext-sheets-table">' + head + body + '</table>';
+  }
+
+  function closeSheetsModal() {
+    const el = document.getElementById('f5ext-sheets-modal');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function closeSheetsPicker() {
+    const el = document.getElementById('f5ext-sheets-picker');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function openSheetsEmployeePicker() {
+    ensureStyles();
+    closeSheetsPicker();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-picker';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-picker-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Выберите сотрудника</div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-picker-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-search-wrap">'
+      +     '<input type="text" class="f5ext-sheets-picker-search" placeholder="Поиск сотрудника" autocomplete="off" />'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-body"></div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    const body = modal.querySelector('.f5ext-sheets-picker-body');
+    body.innerHTML = '<div class="f5ext-entity-empty">Загружаю все страницы разноски…</div>';
+    function renderNames(names, allRows, query) {
+      const q = String(query || '').trim().toLowerCase();
+      body.innerHTML = '';
+      names.filter((name) => !q || name.toLowerCase().indexOf(q) !== -1).forEach((name) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'f5ext-sheets-employee-btn';
+        btn.textContent = name;
+        btn.addEventListener('click', () => {
+          closeSheetsPicker();
+          const rows = allRows.filter((cells) => cells[4] === name);
+          openSheetsModal(buildSheetsTsv(rows), rows.length, rows);
+        });
+        body.appendChild(btn);
+      });
+      if (!body.children.length) {
+        body.innerHTML = '<div class="f5ext-entity-empty">Ничего не найдено.</div>';
+      }
+    }
+    const search = modal.querySelector('.f5ext-sheets-picker-search');
+    search.disabled = true;
+    setTimeout(() => { try { search.focus(); } catch (e) {} }, 0);
+    modal.querySelector('.js-sheets-picker-close').addEventListener('click', closeSheetsPicker);
+    extractSheetsRows().then((allRows) => {
+      const names = Array.from(new Set(allRows.map((cells) => cells[4]).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru'));
+      if (!names.length) {
+        body.innerHTML = '<div class="f5ext-entity-empty">Не нашёл сотрудников в таблице.</div>';
+        return;
+      }
+      search.disabled = false;
+      search.addEventListener('input', () => renderNames(names, allRows, search.value));
+      renderNames(names, allRows, '');
+    }).catch(() => {
+      body.innerHTML = '<div class="f5ext-entity-empty">Не удалось загрузить данные разноски.</div>';
+    });
+  }
+
+  function openSheetsModal(text, rowCount, rows) {
+    ensureStyles();
+    closeSheetsModal();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-modal';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Данные по разноске <span>' + rowCount + ' строк</span></div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-body">'
+      +     '<div class="f5ext-sheets-table-wrap" tabindex="0"></div>'
+      +     '<div class="f5ext-sheets-actions">'
+      +       '<button type="button" class="f5ext-sheets-copy js-sheets-copy">Копировать</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    const tableWrap = modal.querySelector('.f5ext-sheets-table-wrap');
+    tableWrap.innerHTML = rows && rows.length ? buildSheetsHtmlTable(rows) : '<pre>' + escapeHtml(text) + '</pre>';
+    tableWrap.focus();
+    modal.querySelector('.js-sheets-close').addEventListener('click', closeSheetsModal);
+    modal.querySelector('.js-sheets-copy').addEventListener('click', () => {
+      const done = () => {
+        const btn = modal.querySelector('.js-sheets-copy');
+        if (!btn) return;
+        btn.textContent = 'Скопировано';
+        setTimeout(() => { try { btn.textContent = 'Копировать'; } catch (e) {} }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => {
+          fallbackCopy(text);
+          done();
+        });
+      } else {
+        fallbackCopy(text);
+        done();
+      }
+    });
+  }
+
+  function handleSheetsExtract() {
+    openSheetsEmployeePicker();
+    return { ok: true, rows: 0 };
+  }
+
   // -------- Storage --------
   function readStorage() {
     return new Promise((resolve) => {
@@ -2376,6 +2731,11 @@
   }
 
   function applyPanelEnabled() {
+    if (!isAmoLikeHost()) {
+      if (panelMounted) unmountPanel();
+      else removeOrphanDom();
+      return;
+    }
     if (state.panelEnabled && !panelMounted) mountPanel();
     else if (!state.panelEnabled && panelMounted) unmountPanel();
     else if (!state.panelEnabled) removeOrphanDom();
@@ -3712,6 +4072,10 @@
       state.hideAmma = !!msg.hidden;
       applyAmmaHidden();
       sendResponse({ ok: true });
+      return false;
+    }
+    if (msg.type === 'F5VR_EXTRACT_SHEETS') {
+      sendResponse(handleSheetsExtract());
       return false;
     }
     if (msg.type === 'F5VR_EXTRAS_CHANGED') {

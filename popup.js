@@ -47,7 +47,7 @@ async function ensureContentScript(tabId) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['lib/parser.js', 'lib/api.js', 'lib/extras.js', 'content.js']
+        files: ['lib/parser.js', 'lib/api.js', 'lib/extras.js', 'lib/minesweeper.js', 'content.js']
       });
       await chrome.scripting.insertCSS({
         target: { tabId },
@@ -292,6 +292,7 @@ async function onOpenExtras() {
 function onExtrasBack() {
   showView('main');
   setExtrasMsg('', '');
+  refreshUi();
 }
 
 let promoBusy = false;
@@ -315,6 +316,7 @@ async function onPromoApply() {
       if (input) input.value = '';
     }
     await renderExtrasList();
+    await refreshUi();
     const tab = await getActiveTab();
     await notifyExtrasChanged(tab);
   } finally {
@@ -500,7 +502,7 @@ async function onOpenPanel() {
   const tab = await getActiveTab();
   if (!tab || !tab.id) { setResult('Нет активной вкладки', 'is-err'); return; }
   const host = hostnameFromUrl(tab.url || '');
-  if (!isAmoHost(host)) { setResult('Откройте amoCRM/Kommo в активной вкладке', 'is-err'); return; }
+  if (!isSupportedHost(host)) { setResult('Откройте amoCRM/Kommo или страницу разноски в активной вкладке', 'is-err'); return; }
   const ok = await ensureContentScript(tab.id);
   if (!ok) { setResult('Не удалось внедрить скрипт. Перезагрузите вкладку.', 'is-err'); return; }
   // Если панель ранее была отключена — включим её в настройках, иначе mountPanel выйдет раньше времени.
