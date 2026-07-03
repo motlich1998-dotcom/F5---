@@ -2396,6 +2396,28 @@
     return '<table class="f5ext-sheets-table">' + head + body + foot + '</table>';
   }
 
+  function sheetsPlainTextFromSelection(tableWrap, fallbackText) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return fallbackText;
+    const range = sel.getRangeAt(0);
+    if (!tableWrap.contains(range.commonAncestorContainer)) return fallbackText;
+    const table = tableWrap.querySelector('table.f5ext-sheets-table');
+    if (!table) return (sel.toString() || fallbackText).replace(/\u00a0/g, ' ');
+    const lines = [];
+    table.querySelectorAll('tr').forEach((tr) => {
+      const cells = [];
+      let rowSelected = false;
+      tr.querySelectorAll('th, td').forEach((cell) => {
+        if (sel.containsNode(cell, true)) {
+          rowSelected = true;
+          cells.push((cell.textContent || '').replace(/\u00a0/g, ' ').trim());
+        }
+      });
+      if (rowSelected) lines.push(cells.join('\t'));
+    });
+    return lines.length ? lines.join('\n') : fallbackText;
+  }
+
   function closeSheetsModal() {
     const el = document.getElementById('f5ext-sheets-modal');
     if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -2608,24 +2630,22 @@
     document.body.appendChild(modal);
     const tableWrap = modal.querySelector('.f5ext-sheets-table-wrap');
     tableWrap.innerHTML = rows && rows.length ? buildSheetsHtmlTable(rows) : '<pre>' + escapeHtml(text) + '</pre>';
+    tableWrap.addEventListener('copy', (e) => {
+      const plain = sheetsPlainTextFromSelection(tableWrap, text);
+      e.preventDefault();
+      if (e.clipboardData) e.clipboardData.setData('text/plain', plain);
+    });
     tableWrap.focus();
     modal.querySelector('.js-sheets-close').addEventListener('click', closeSheetsModal);
     modal.querySelector('.js-sheets-copy').addEventListener('click', () => {
+      const plain = sheetsPlainTextFromSelection(tableWrap, text);
       const done = () => {
         const btn = modal.querySelector('.js-sheets-copy');
         if (!btn) return;
         btn.textContent = 'Скопировано';
         setTimeout(() => { try { btn.textContent = 'Копировать'; } catch (e) {} }, 1400);
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(() => {
-          fallbackCopy(text);
-          done();
-        });
-      } else {
-        fallbackCopy(text);
-        done();
-      }
+      copyToClipboard(plain).then(done);
     });
   }
 
