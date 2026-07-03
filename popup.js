@@ -25,6 +25,14 @@ function isAmoHost(host) {
   return /\.amocrm\.(ru|com)$/i.test(host || '') || /\.kommo\.com$/i.test(host || '');
 }
 
+function isSheetsHost(host) {
+  return (host || '').toLowerCase() === '147.45.164.13';
+}
+
+function isSupportedHost(host) {
+  return isAmoHost(host) || isSheetsHost(host);
+}
+
 async function readStorage() {
   const raw = await chrome.storage.local.get([STORAGE_DICT_KEY, STORAGE_SETTINGS_KEY]);
   return {
@@ -186,10 +194,14 @@ async function renderExtrasList() {
   const items = window.F5VRExtras.listUnlockedFeatures(extras);
   const catId = window.F5VRExtras.FEATURE_CATDANCE || 'x7f3a';
   const msId = window.F5VRExtras.FEATURE_MINESWEEPER || 'm9k2';
+  const sheetsId = window.F5VRExtras.FEATURE_SHEETS_EXPORT || 'sh03';
   const savedGif = (extras.settings && extras.settings[catId] && extras.settings[catId].gifUrl) || '';
   const savedBoard = window.F5VRExtras.getMinesweeperBoardSize
     ? window.F5VRExtras.getMinesweeperBoardSize(extras)
     : '16';
+  const savedSheetsEmployee = window.F5VRExtras.getSheetsEmployeeName
+    ? window.F5VRExtras.getSheetsEmployeeName(extras)
+    : ((extras.settings && extras.settings[sheetsId] && extras.settings[sheetsId].employeeName) || '');
   listEl.innerHTML = '';
   if (emptyEl) emptyEl.hidden = items.length > 0;
   items.forEach((it) => {
@@ -239,6 +251,21 @@ async function renderExtrasList() {
       block.appendChild(settings);
     }
 
+    if (it.id === sheetsId) {
+      const settings = document.createElement('div');
+      settings.className = 'extras-feature-settings';
+      settings.innerHTML = ''
+        + '<div class="extras-settings-label">Сотрудник по умолчанию</div>'
+        + '<div class="extras-gif-row">'
+        +   '<input type="text" class="extras-gif-input" id="sheets-employee-name" '
+        +   'placeholder="Фамилия Имя" spellcheck="false" autocomplete="off" '
+        +   'value="' + escapeHtml(savedSheetsEmployee) + '" />'
+        +   '<button type="button" class="btn" id="sheets-employee-save">Сохранить</button>'
+        + '</div>'
+        + '<div class="extras-settings-hint">Если сотрудник найден в разноске, выбор при клике пропускается.</div>';
+      block.appendChild(settings);
+    }
+
     listEl.appendChild(block);
   });
 }
@@ -252,6 +279,21 @@ async function onMsBoardSave() {
     : '16';
   await window.F5VRExtras.setFeatureSetting(msId, 'boardSize', size);
   setExtrasMsg('Размер поля сохранён.', 'is-ok');
+  const tab = await getActiveTab();
+  await notifyExtrasChanged(tab);
+}
+
+async function onSheetsEmployeeSave() {
+  if (!window.F5VRExtras) return;
+  const input = $('#sheets-employee-name');
+  const sheetsId = window.F5VRExtras.FEATURE_SHEETS_EXPORT || 'sh03';
+  const raw = input ? input.value : '';
+  const normalized = window.F5VRExtras.normalizeSheetsEmployeeName
+    ? window.F5VRExtras.normalizeSheetsEmployeeName(raw)
+    : String(raw || '').replace(/\s+/g, ' ').trim();
+  await window.F5VRExtras.setFeatureSetting(sheetsId, 'employeeName', normalized);
+  if (input) input.value = normalized;
+  setExtrasMsg(normalized ? 'Сотрудник сохранён.' : 'Сотрудник по умолчанию очищен.', 'is-ok');
   const tab = await getActiveTab();
   await notifyExtrasChanged(tab);
 }
@@ -370,6 +412,17 @@ async function refreshUi() {
   } else {
     $refresh.disabled = false;
     $refresh.title = '';
+  }
+
+  const $openPanel = $('#open-panel');
+  if ($openPanel) {
+    if (!isSupportedHost(host)) {
+      $openPanel.disabled = true;
+      $openPanel.title = 'Откройте amoCRM/Kommo или страницу разноски';
+    } else {
+      $openPanel.disabled = false;
+      $openPanel.title = '';
+    }
   }
 
   const $domains = $('#domains');
@@ -555,11 +608,19 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         onMsBoardSave();
       }
+      if (t && t.id === 'sheets-employee-save') {
+        e.preventDefault();
+        onSheetsEmployeeSave();
+      }
     });
     extrasList.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'catdance-gif-url') {
         e.preventDefault();
         onCatDanceGifSave();
+      }
+      if (e.key === 'Enter' && e.target && e.target.id === 'sheets-employee-name') {
+        e.preventDefault();
+        onSheetsEmployeeSave();
       }
     });
   }

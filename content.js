@@ -2080,7 +2080,7 @@
     }
   }
 
-  // -------- Sheets export (доп. функция → текст из таблицы разноски) --------
+  // -------- Sheets export (доп. функция → API разноски) --------
   const SHEETS_EXPORT_COLUMNS = [
     { key: 'date', title: 'Дата' },
     { key: 'contractor', title: 'Контрагент' },
@@ -2097,46 +2097,45 @@
   }
 
   function isSheetsPage() {
-    if (!document.body) return false;
-    const text = (document.body.innerText || '').replace(/\s+/g, ' ');
-    const hasTitle = text.indexOf('Система разноса счетов') !== -1;
-    const hasTabs = text.indexOf('Приход компании') !== -1 && text.indexOf('Разноска по отделу') !== -1;
-    return hasTitle || hasTabs || hasSheetsDataTable();
+    return HOST === '147.45.164.13';
   }
 
-  function hasSheetsDataTable() {
-    const keys = ['date', 'contractor', 'creator_user', 'accrual_hours', 'employee_user'];
-    const rows = Array.from(document.querySelectorAll('tr[data-row-uuid]'));
-    return rows.some((row) => keys.every((key) => row.querySelector('td[data-column-key="' + key + '"]')));
-  }
-
-  function isDepartmentRaznoskaActive() {
-    const holder = document.getElementById('departmentRaznoskaTabButton');
-    if (holder) {
-      const btn = holder.querySelector('.tab') || holder;
-      if (holder.classList.contains('active') || btn.classList.contains('active')) return true;
-      const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
-      const bg = style && style.backgroundColor ? style.backgroundColor : '';
-      const rgb = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-      const isDarkActiveBg = rgb && ((Number(rgb[1]) + Number(rgb[2]) + Number(rgb[3])) / 3) < 210;
-      if (isDarkActiveBg) {
-        const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
-        if (text.indexOf('Разноска по отделу') !== -1) return true;
-      }
-    }
-    const activeTabs = Array.from(document.querySelectorAll('.tab.active, .tab.is-active, .active .tab'));
-    return activeTabs.some((el) => (el.textContent || '').replace(/\s+/g, ' ').trim().indexOf('Разноска по отделу') !== -1);
+  function sheetsText(el) {
+    return (el && el.textContent ? el.textContent : '').replace(/\s+/g, ' ').trim();
   }
 
   function findSheetsNavHost() {
-    const holder = document.getElementById('departmentRaznoskaTabButton');
-    if (holder && holder.parentElement) return holder.parentElement;
-    return null;
+    const tabTexts = ['Приход компании', 'Разноска по отделу', 'Настройки аккаунта'];
+    const tabEls = Array.from(document.querySelectorAll('button, a, div, span')).filter((el) => {
+      return tabTexts.indexOf(sheetsText(el)) !== -1;
+    });
+    for (let i = 0; i < tabEls.length; i++) {
+      let node = tabEls[i].parentElement;
+      while (node && node !== document.body) {
+        const hostText = sheetsText(node);
+        const matches = tabTexts.filter((text) => hostText.indexOf(text) !== -1).length;
+        if (matches >= 2) return node;
+        node = node.parentElement;
+      }
+    }
+
+    let fallback = document.querySelector('.f5ext-sheets-fallback-host');
+    if (!fallback) {
+      fallback = document.createElement('div');
+      fallback.className = 'f5ext-sheets-fallback-host';
+      document.body.appendChild(fallback);
+    }
+    return fallback;
   }
 
   function removeSheetsPageButton() {
-    document.querySelectorAll('.f5ext-sheets-tab-wrap, .f5ext-sheets-page-btn').forEach((btn) => {
+    document.querySelectorAll('.f5ext-sheets-header-wrap, .f5ext-sheets-tab-wrap, .f5ext-sheets-page-btn').forEach((btn) => {
       try { btn.remove(); } catch (e) {}
+    });
+    document.querySelectorAll('.f5ext-sheets-fallback-host').forEach((host) => {
+      if (!host.children.length) {
+        try { host.remove(); } catch (e) {}
+      }
     });
   }
 
@@ -2149,23 +2148,30 @@
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      openSheetsEmployeePicker();
+      handleSheetsExtract();
     });
     return btn;
   }
 
   function syncSheetsPageButton() {
-    if (!isSheetsExportActive() || !isSheetsPage() || !isDepartmentRaznoskaActive() || !hasSheetsDataTable()) {
+    if (!isSheetsExportActive() || !isSheetsPage()) {
       removeSheetsPageButton();
       return;
     }
     ensureStyles();
-    if (document.querySelector('.f5ext-sheets-page-btn')) return;
-    const btn = createSheetsPageButton();
     const host = findSheetsNavHost();
     if (!host) return;
+    const existingWrap = document.querySelector('.f5ext-sheets-header-wrap, .f5ext-sheets-tab-wrap');
+    if (existingWrap) {
+      if (existingWrap.parentElement === host) return;
+      try { existingWrap.remove(); } catch (e) {}
+    }
+    document.querySelectorAll('.f5ext-sheets-page-btn').forEach((btn) => {
+      try { btn.remove(); } catch (e) {}
+    });
+    const btn = createSheetsPageButton();
     const wrap = document.createElement('div');
-    wrap.className = 'tab-with-dropdown f5ext-sheets-tab-wrap';
+    wrap.className = 'tab-with-dropdown f5ext-sheets-header-wrap';
     wrap.appendChild(btn);
     host.appendChild(wrap);
   }
@@ -2211,28 +2217,26 @@
     return m ? (m[3] + '.' + m[2] + '.' + m[1]) : s;
   }
 
-  function sheetsCellText(row, key) {
-    const cell = row.querySelector('td[data-column-key="' + key + '"]');
-    if (!cell) return '';
-    const input = cell.querySelector('input, textarea, select');
-    let value = '';
-    if (input) {
-      value = input.getAttribute('data-display-value') || input.value || input.getAttribute('data-last-value') || '';
-    } else {
-      value = cell.textContent || '';
+  function normalizeSheetsEmployeeName(raw) {
+    if (window.F5VRExtras && window.F5VRExtras.normalizeSheetsEmployeeName) {
+      return window.F5VRExtras.normalizeSheetsEmployeeName(raw);
     }
-    value = String(value).replace(/\s+/g, ' ').trim();
-    if (key === 'date') value = formatIsoDateRu(value);
-    if (key === 'accrual_hours') value = value.replace('.', ',');
-    return value;
+    return String(raw || '').replace(/\s+/g, ' ').trim();
   }
 
-  function extractSheetsRowsFromDom(employeeName) {
-    const rows = Array.from(document.querySelectorAll('tr[data-row-uuid]'))
-      .filter((row) => SHEETS_EXPORT_COLUMNS.some((col) => row.querySelector('td[data-column-key="' + col.key + '"]')));
-    return rows.map((row) => SHEETS_EXPORT_COLUMNS.map((col) => sheetsCellText(row, col.key)))
-      .filter((cells) => cells.some(Boolean))
-      .filter((cells) => !employeeName || cells[4] === employeeName);
+  function getSavedSheetsEmployeeName() {
+    if (window.F5VRExtras && window.F5VRExtras.getSheetsEmployeeName) {
+      return window.F5VRExtras.getSheetsEmployeeName(state.extras);
+    }
+    const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_SHEETS_EXPORT;
+    const st = featureId && state.extras && state.extras.settings && state.extras.settings[featureId];
+    return normalizeSheetsEmployeeName(st && st.employeeName);
+  }
+
+  function sheetsEmployeeMatches(actual, expected) {
+    const a = normalizeSheetsEmployeeName(actual).toLowerCase();
+    const e = normalizeSheetsEmployeeName(expected).toLowerCase();
+    return !e || a === e;
   }
 
   function currentRaznoskaId() {
@@ -2249,6 +2253,13 @@
     return m ? decodeURIComponent(m[1]) : '';
   }
 
+  function sheetsApiHeaders() {
+    const token = pageAuthToken();
+    const headers = { Accept: 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    return headers;
+  }
+
   function sheetsApiRowToCells(row) {
     return [
       formatIsoDateRu(row && row[1]),
@@ -2259,48 +2270,118 @@
     ];
   }
 
-  async function fetchSheetsApiPage(page, limit) {
-    const id = currentRaznoskaId();
-    if (!id) throw new Error('Не удалось определить id разноски из URL.');
-    const token = pageAuthToken();
-    const headers = { Accept: 'application/json' };
-    if (token) headers.Authorization = 'Bearer ' + token;
+  async function fetchSheetsApiPage(raznoskaId, page, limit) {
+    const id = raznoskaId || currentRaznoskaId();
+    if (!id) throw new Error('Не удалось определить id разноски.');
     const url = '/api/raznoskas/' + encodeURIComponent(id)
       + '/data?page=' + encodeURIComponent(page)
       + '&limit=' + encodeURIComponent(limit)
       + '&t=' + Date.now()
       + '&isDepartmentView=true';
-    const resp = await fetch(url, { credentials: 'include', headers: headers });
+    const resp = await fetch(url, { credentials: 'include', headers: sheetsApiHeaders() });
     if (!resp.ok) throw new Error('HTTP ' + resp.status + ' при загрузке страницы ' + page);
     return resp.json();
   }
 
-  async function extractSheetsRowsFromApi(employeeName) {
+  async function extractSheetsRowsFromApi(raznoskaId) {
     const limit = 200;
-    const first = await fetchSheetsApiPage(1, limit);
-    const pagination = first && first.pagination ? first.pagination : {};
-    const totalPages = Math.max(1, Number(pagination.totalPages) || 1);
+    const first = await fetchSheetsApiPage(raznoskaId, 1, limit);
+    const totalPages = sheetsApiTotalPages(first, limit);
     let rawRows = Array.isArray(first.data) ? first.data.slice() : [];
     for (let page = 2; page <= totalPages; page++) {
-      const next = await fetchSheetsApiPage(page, limit);
+      const next = await fetchSheetsApiPage(raznoskaId, page, limit);
       if (next && Array.isArray(next.data)) rawRows = rawRows.concat(next.data);
     }
     return rawRows.map(sheetsApiRowToCells)
-      .filter((cells) => cells.some(Boolean))
-      .filter((cells) => !employeeName || cells[4] === employeeName);
+      .filter((cells) => cells.some(Boolean));
   }
 
-  async function extractSheetsRows(employeeName) {
-    try {
-      const rows = await extractSheetsRowsFromApi(employeeName);
-      if (rows.length) return rows;
-    } catch (e) {}
-    return extractSheetsRowsFromDom(employeeName);
+  async function extractSheetsRows(raznoskaId) {
+    return extractSheetsRowsFromApi(raznoskaId);
+  }
+
+  function sheetsApiTotalPages(payload, limit) {
+    const pagination = payload && payload.pagination ? payload.pagination : {};
+    const explicit = Number(
+      pagination.totalPages
+      || pagination.total_pages
+      || pagination.pages
+      || pagination.lastPage
+      || pagination.last_page
+    );
+    if (Number.isFinite(explicit) && explicit > 0) return Math.ceil(explicit);
+    const total = Number(
+      pagination.total
+      || pagination.totalItems
+      || pagination.total_items
+      || pagination.count
+    );
+    if (Number.isFinite(total) && total > 0 && limit > 0) return Math.max(1, Math.ceil(total / limit));
+    return 1;
+  }
+
+  async function fetchSheetsRaznoskasPage(page, limit) {
+    const url = '/api/raznoskas?page=' + encodeURIComponent(page)
+      + '&limit=' + encodeURIComponent(limit);
+    const resp = await fetch(url, { credentials: 'include', headers: sheetsApiHeaders() });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ' при загрузке списка разносок');
+    return resp.json();
+  }
+
+  async function fetchSheetsRaznoskas() {
+    const limit = 1000;
+    const first = await fetchSheetsRaznoskasPage(1, limit);
+    const totalPages = sheetsApiTotalPages(first, limit);
+    let items = Array.isArray(first.data) ? first.data.slice() : [];
+    for (let page = 2; page <= totalPages; page++) {
+      const next = await fetchSheetsRaznoskasPage(page, limit);
+      if (next && Array.isArray(next.data)) items = items.concat(next.data);
+    }
+    return items.filter((it) => it && (it.id || it.csvId));
+  }
+
+  function sheetsRaznoskaLabel(item) {
+    const name = String((item && item.name) || '').trim() || String((item && item.id) || '');
+    const count = Number(item && item.rowCount);
+    return name + (Number.isFinite(count) ? ' · ' + count + ' строк' : '');
+  }
+
+  function latestMonthlySheetsRaznoskas(items, limit) {
+    return (items || []).filter((item) => {
+      return item
+        && item.id
+        && Number(item.period_year) > 0
+        && Number(item.period_month) >= 1
+        && Number(item.period_month) <= 12;
+    }).sort((a, b) => {
+      const ay = Number(a.period_year) || 0;
+      const by = Number(b.period_year) || 0;
+      if (ay !== by) return by - ay;
+      return (Number(b.period_month) || 0) - (Number(a.period_month) || 0);
+    }).slice(0, limit);
   }
 
   function buildSheetsTsv(rows) {
+    const dataRows = rows || [];
     const header = SHEETS_EXPORT_COLUMNS.map((col) => col.title);
-    return [header].concat(rows).map((cells) => cells.join('\t')).join('\n');
+    const total = ['', '', 'Итого', formatSheetsHours(sheetsRowsTotalHours(dataRows)), ''];
+    return [header].concat(dataRows, dataRows.length ? [total] : []).map((cells) => cells.join('\t')).join('\n');
+  }
+
+  function parseSheetsHours(value) {
+    const n = Number(String(value || '').replace(/\s+/g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function sheetsRowsTotalHours(rows) {
+    return (rows || []).reduce((sum, cells) => sum + parseSheetsHours(cells && cells[3]), 0);
+  }
+
+  function formatSheetsHours(value) {
+    return Number(value || 0).toLocaleString('ru-RU', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
   }
 
   function buildSheetsHtmlTable(rows) {
@@ -2308,7 +2389,11 @@
     const body = '<tbody>' + rows.map((cells) => {
       return '<tr>' + cells.map((cell) => '<td>' + escapeHtml(cell) + '</td>').join('') + '</tr>';
     }).join('') + '</tbody>';
-    return '<table class="f5ext-sheets-table">' + head + body + '</table>';
+    const total = formatSheetsHours(sheetsRowsTotalHours(rows));
+    const foot = '<tfoot><tr>'
+      + '<td></td><td></td><td>Итого</td><td>' + escapeHtml(total) + '</td><td></td>'
+      + '</tr></tfoot>';
+    return '<table class="f5ext-sheets-table">' + head + body + foot + '</table>';
   }
 
   function closeSheetsModal() {
@@ -2321,9 +2406,130 @@
     if (el && el.parentNode) el.parentNode.removeChild(el);
   }
 
-  function openSheetsEmployeePicker() {
+  function closeSheetsRaznoskaPicker() {
+    const el = document.getElementById('f5ext-sheets-raznoska-picker');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function closeSheetsLoadingModal() {
+    const el = document.getElementById('f5ext-sheets-loading-modal');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function closeSheetsInfoModal() {
+    const el = document.getElementById('f5ext-sheets-info-modal');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function openSheetsInfoModal(message) {
     ensureStyles();
     closeSheetsPicker();
+    closeSheetsRaznoskaPicker();
+    closeSheetsLoadingModal();
+    closeSheetsInfoModal();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-info-modal';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-picker-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Данные по разноске</div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-info-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-body">'
+      +     '<div class="f5ext-entity-empty">' + escapeHtml(message) + '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.querySelector('.js-sheets-info-close').addEventListener('click', closeSheetsInfoModal);
+  }
+
+  function openSheetsLoadingModal() {
+    ensureStyles();
+    closeSheetsPicker();
+    closeSheetsRaznoskaPicker();
+    closeSheetsLoadingModal();
+    closeSheetsInfoModal();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-loading-modal';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-picker-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Данные по разноске</div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-loading-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-body">'
+      +     '<div class="f5ext-sheets-loading" role="status" aria-label="Загрузка"></div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.querySelector('.js-sheets-loading-close').addEventListener('click', closeSheetsLoadingModal);
+  }
+
+  function openSheetsRaznoskaPicker() {
+    ensureStyles();
+    closeSheetsPicker();
+    closeSheetsRaznoskaPicker();
+    closeSheetsLoadingModal();
+    closeSheetsInfoModal();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-raznoska-picker';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-picker-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Выберите разноску</div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-raznoska-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-search-wrap">'
+      +     '<input type="text" class="f5ext-sheets-picker-search" placeholder="Поиск разноски" autocomplete="off" />'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-picker-body"></div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    const body = modal.querySelector('.f5ext-sheets-picker-body');
+    body.innerHTML = '<div class="f5ext-sheets-loading" role="status" aria-label="Загрузка"></div>';
+    function renderRaznoskas(items, query) {
+      const q = String(query || '').trim().toLowerCase();
+      body.innerHTML = '';
+      items.filter((item) => !q || sheetsRaznoskaLabel(item).toLowerCase().indexOf(q) !== -1).forEach((item) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'f5ext-sheets-employee-btn';
+        btn.textContent = sheetsRaznoskaLabel(item);
+        btn.addEventListener('click', () => {
+          closeSheetsRaznoskaPicker();
+          runSheetsExtractForRaznoska(String(item.id || item.csvId || ''));
+        });
+        body.appendChild(btn);
+      });
+      if (!body.children.length) {
+        body.innerHTML = '<div class="f5ext-entity-empty">Ничего не найдено.</div>';
+      }
+    }
+    const search = modal.querySelector('.f5ext-sheets-picker-search');
+    search.disabled = true;
+    setTimeout(() => { try { search.focus(); } catch (e) {} }, 0);
+    modal.querySelector('.js-sheets-raznoska-close').addEventListener('click', closeSheetsRaznoskaPicker);
+    fetchSheetsRaznoskas().then((items) => {
+      items = latestMonthlySheetsRaznoskas(items, 5);
+      if (!items.length) {
+        body.innerHTML = '<div class="f5ext-entity-empty">Не нашёл месячных разносок.</div>';
+        return;
+      }
+      search.disabled = false;
+      search.addEventListener('input', () => renderRaznoskas(items, search.value));
+      renderRaznoskas(items, '');
+    }).catch(() => {
+      body.innerHTML = '<div class="f5ext-entity-empty">Не удалось загрузить список разносок.</div>';
+    });
+  }
+
+  function openSheetsEmployeePicker(initialQuery, preloadedRows, raznoskaId) {
+    ensureStyles();
+    closeSheetsPicker();
+    closeSheetsLoadingModal();
     const modal = document.createElement('div');
     modal.id = 'f5ext-sheets-picker';
     modal.className = 'f5ext-sheets-modal';
@@ -2340,7 +2546,7 @@
       + '</div>';
     document.body.appendChild(modal);
     const body = modal.querySelector('.f5ext-sheets-picker-body');
-    body.innerHTML = '<div class="f5ext-entity-empty">Загружаю все страницы разноски…</div>';
+    body.innerHTML = '<div class="f5ext-sheets-loading" role="status" aria-label="Загрузка"></div>';
     function renderNames(names, allRows, query) {
       const q = String(query || '').trim().toLowerCase();
       body.innerHTML = '';
@@ -2364,15 +2570,17 @@
     search.disabled = true;
     setTimeout(() => { try { search.focus(); } catch (e) {} }, 0);
     modal.querySelector('.js-sheets-picker-close').addEventListener('click', closeSheetsPicker);
-    extractSheetsRows().then((allRows) => {
+    const rowsPromise = Array.isArray(preloadedRows) ? Promise.resolve(preloadedRows) : extractSheetsRows(raznoskaId);
+    rowsPromise.then((allRows) => {
       const names = Array.from(new Set(allRows.map((cells) => cells[4]).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru'));
       if (!names.length) {
-        body.innerHTML = '<div class="f5ext-entity-empty">Не нашёл сотрудников в таблице.</div>';
+        body.innerHTML = '<div class="f5ext-entity-empty">Не нашёл сотрудников в разноске.</div>';
         return;
       }
       search.disabled = false;
       search.addEventListener('input', () => renderNames(names, allRows, search.value));
-      renderNames(names, allRows, '');
+      search.value = normalizeSheetsEmployeeName(initialQuery);
+      renderNames(names, allRows, search.value);
     }).catch(() => {
       body.innerHTML = '<div class="f5ext-entity-empty">Не удалось загрузить данные разноски.</div>';
     });
@@ -2421,8 +2629,67 @@
     });
   }
 
+  function openSheetsResultLoadingModal() {
+    ensureStyles();
+    closeSheetsModal();
+    closeSheetsPicker();
+    closeSheetsRaznoskaPicker();
+    closeSheetsLoadingModal();
+    closeSheetsInfoModal();
+    const modal = document.createElement('div');
+    modal.id = 'f5ext-sheets-modal';
+    modal.className = 'f5ext-sheets-modal';
+    modal.innerHTML = ''
+      + '<div class="f5ext-sheets-shell">'
+      +   '<div class="f5ext-sheets-head">'
+      +     '<div class="f5ext-sheets-title">Данные по разноске</div>'
+      +     '<button type="button" class="f5ext-btn-ic js-sheets-close" title="Закрыть">×</button>'
+      +   '</div>'
+      +   '<div class="f5ext-sheets-body">'
+      +     '<div class="f5ext-sheets-table-wrap f5ext-sheets-table-loading" tabindex="0">'
+      +       '<div class="f5ext-sheets-loading" role="status" aria-label="Загрузка"></div>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.querySelector('.js-sheets-close').addEventListener('click', closeSheetsModal);
+  }
+
+  function runSheetsExtractForRaznoska(raznoskaId) {
+    if (!raznoskaId) {
+      openSheetsRaznoskaPicker();
+      return;
+    }
+    const savedEmployee = getSavedSheetsEmployeeName();
+    if (!savedEmployee) {
+      openSheetsEmployeePicker('', null, raznoskaId);
+      return;
+    }
+    let resultLoadingShown = false;
+    const resultLoadingTimer = setTimeout(() => {
+      resultLoadingShown = true;
+      openSheetsResultLoadingModal();
+    }, 220);
+    extractSheetsRows(raznoskaId).then((allRows) => {
+      clearTimeout(resultLoadingTimer);
+      const rows = allRows.filter((cells) => sheetsEmployeeMatches(cells[4], savedEmployee));
+      if (rows.length) {
+        openSheetsModal(buildSheetsTsv(rows), rows.length, rows);
+      } else {
+        if (resultLoadingShown) closeSheetsModal();
+        openSheetsEmployeePicker('', allRows, raznoskaId);
+      }
+    }).catch(() => {
+      clearTimeout(resultLoadingTimer);
+      if (resultLoadingShown) closeSheetsModal();
+      openSheetsEmployeePicker('', null, raznoskaId);
+    });
+  }
+
   function handleSheetsExtract() {
-    openSheetsEmployeePicker();
+    const id = currentRaznoskaId();
+    if (id) runSheetsExtractForRaznoska(id);
+    else openSheetsRaznoskaPicker();
     return { ok: true, rows: 0 };
   }
 
@@ -2759,6 +3026,10 @@
 
   function applyAmmaHidden() {
     const existing = document.getElementById(AMMA_STYLE_ID);
+    if (!isAmoLikeHost()) {
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return;
+    }
     if (state.hideAmma) {
       if (existing) {
         existing.textContent = AMMA_HIDE_CSS;
@@ -4074,10 +4345,6 @@
       sendResponse({ ok: true });
       return false;
     }
-    if (msg.type === 'F5VR_EXTRACT_SHEETS') {
-      sendResponse(handleSheetsExtract());
-      return false;
-    }
     if (msg.type === 'F5VR_EXTRAS_CHANGED') {
       loadExtrasFromStorage().then(() => {
         revertAllCatDanceHints();
@@ -4117,7 +4384,7 @@
       applyAmmaHidden();
       applyExtrasFeatures();
       const stale = !state.fetchedAt || (Date.now() - state.fetchedAt) > TTL_MS;
-      if (stale) setTimeout(() => { refreshDictionary(); }, 1500);
+      if (isAmoLikeHost() && stale) setTimeout(() => { refreshDictionary(); }, 1500);
     });
   }
   init();
