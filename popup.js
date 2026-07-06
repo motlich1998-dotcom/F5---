@@ -281,11 +281,12 @@ async function renderExtrasList() {
         + '<div class="extras-settings-label">Имя листа (необязательно)</div>'
         + '<div class="extras-gif-row">'
         +   '<input type="text" class="extras-gif-input" id="dept-import-tab" '
-        +   'placeholder="Разноска" spellcheck="false" autocomplete="off" '
+        +   'placeholder="Часы отдела" spellcheck="false" autocomplete="off" '
         +   'value="' + escapeHtml(savedDeptImport.sheetTab || '') + '" />'
         +   '<button type="button" class="btn" id="dept-import-save">Сохранить</button>'
         + '</div>'
-        + '<div class="extras-settings-hint">Скрипт для таблицы: private/sheets-dept-import.gs</div>';
+        + '<div class="extras-settings-hint">При импорте расширение передаёт токен и id разноски в Apps Script. '
+        + 'Автообновление каждый час — в меню таблицы «Часы отдела».</div>';
       block.appendChild(settings);
     }
 
@@ -332,6 +333,14 @@ async function onDeptImportSave() {
   const sheetTab = tabInput ? String(tabInput.value || '').trim() : '';
   if (importUrl && !/^https:\/\//i.test(importUrl)) {
     setExtrasMsg('URL должен начинаться с https://', 'is-err');
+    return;
+  }
+  if (importUrl && !importSecret) {
+    setExtrasMsg('Укажите секретный токен.', 'is-err');
+    return;
+  }
+  if (importSecret && !importUrl) {
+    setExtrasMsg('Укажите URL веб-приложения Apps Script.', 'is-err');
     return;
   }
   await window.F5VRExtras.setFeatureSetting(sheetsId, 'importUrl', importUrl);
@@ -669,6 +678,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter' && e.target && e.target.id === 'sheets-employee-name') {
         e.preventDefault();
         onSheetsEmployeeSave();
+      }
+      if (e.key === 'Enter' && e.target && (
+        e.target.id === 'dept-import-url'
+        || e.target.id === 'dept-import-secret'
+        || e.target.id === 'dept-import-tab'
+      )) {
+        e.preventDefault();
+        onDeptImportSave();
       }
     });
   }

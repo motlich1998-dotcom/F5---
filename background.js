@@ -9,8 +9,8 @@
  *
  * Хранится:
  *   chrome.storage.local["update"] = {
- *     availableVersion: "2.1.7",
- *     currentVersion:   "2.1.7",
+ *     availableVersion: "2.1.9",
+ *     currentVersion:   "2.1.9",
  *     checkedAt:        <ms>,
  *     hasUpdate:        true | false,
  *     error:            null | string
@@ -19,7 +19,6 @@
 
 const ALARM_NAME = 'f5vr-update-check';
 const CHECK_PERIOD_MINUTES = 12 * 60; // раз в 12 часов
-// Файлы расширения лежат в корне репозитория F5---, без подпапки.
 const MANIFEST_URL = 'https://raw.githubusercontent.com/motlich1998-dotcom/F5---/main/manifest.json';
 
 function parseVersion(v) {
@@ -29,7 +28,6 @@ function parseVersion(v) {
   return parts;
 }
 
-// Возвращает 1, 0 или -1 для (a > b, a == b, a < b).
 function compareVersions(a, b) {
   const aa = parseVersion(a);
   const bb = parseVersion(b);
@@ -46,7 +44,6 @@ async function checkForUpdates() {
   const currentVersion = chrome.runtime.getManifest().version;
   const checkedAt = Date.now();
   try {
-    // cache: 'no-store' — раз в 12 часов точно хочется свежий ответ.
     const resp = await fetch(MANIFEST_URL, { cache: 'no-store' });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const remote = await resp.json();
@@ -76,6 +73,76 @@ async function checkForUpdates() {
   }
 }
 
+function isAllowedAppsScriptUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return u.protocol === 'https:'
+      && (u.hostname === 'script.google.com' || u.hostname === 'script.googleusercontent.com');
+  } catch (e) {
+    return false;
+  }
+}
+
+async function postAppsScriptWebApp(url, payload) {
+  const body = JSON.stringify(payload || {});
+  const targetUrl = String(url || '');
+  if (!isAllowedAppsScriptUrl(targetUrl)) {
+    throw new Error('URL должен указывать на Apps Script (https://script.google.com/…).');
+  }
+
+  async function readResponse(resp) {
+    const text = await resp.text();
+    return { resp: resp, text: text };
+  }
+
+  let result = await readResponse(await fetch(targetUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+    redirect: 'follow',
+    cache: 'no-store'
+  }));
+
+  if (/^\s*</.test(result.text)) {
+    const manual = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
+      redirect: 'manual',
+      cache: 'no-store'
+    });
+    const redirectUrl = manual.headers.get('Location');
+    if (redirectUrl) {
+      result = await readResponse(await fetch(redirectUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        cache: 'no-store'
+      }));
+    }
+  }
+
+  const text = result.text;
+  if (/^\s*</.test(text)) {
+    const titleMatch = text.match(/<title>([^<]+)<\/title>/i);
+    const extra = titleMatch ? (' (' + titleMatch[1] + ')') : '';
+    throw new Error(
+      'Сервер вернул HTML вместо JSON' + extra
+      + '. Обновите код Apps Script и создайте новое развертывание веб-приложения.'
+    );
+  }
+
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Сервер вернул некорректный ответ.');
+  }
+  if (!result.resp.ok || !data || data.ok === false) {
+    throw new Error((data && data.error) || ('HTTP ' + result.resp.status + ' при импорте.'));
+  }
+  return data;
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM_NAME, {
     delayInMinutes: 1,
@@ -94,34 +161,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) checkForUpdates();
 });
 
-async function postAppsScriptWebApp(url, payload) {
-  const body = JSON.stringify(payload || {});
-  // Apps Script: POST выполняет doPost, затем 302 → GET на echo-URL с JSON-ответом.
-  // redirect:'follow' в service worker сам делает GET; manual ломается (opaque redirect).
-  const resp = await fetch(String(url || ''), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body,
-    redirect: 'follow',
-    cache: 'no-store'
-  });
-  const text = await resp.text();
-  if (/^\s*</.test(text)) {
-    throw new Error('Сервер вернул HTML вместо JSON. Проверьте URL и развертывание Apps Script.');
-  }
-  let data = null;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error('Сервер вернул некорректный ответ.');
-  }
-  if (!resp.ok || !data || data.ok === false) {
-    throw new Error((data && data.error) || ('HTTP ' + resp.status + ' при импорте.'));
-  }
-  return data;
-}
-
-// Ручная проверка из попапа: { type: 'F5VR_CHECK_UPDATES' } -> { hasUpdate, availableVersion }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'F5VR_CHECK_UPDATES') {
     checkForUpdates().then((res) => sendResponse(res));

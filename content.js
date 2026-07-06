@@ -2088,12 +2088,6 @@
     { key: 'accrual_hours', title: 'Часов к начислению' },
     { key: 'employee_user', title: 'Начислено сотруднику' }
   ];
-  const SHEETS_DEPT_EMPLOYEES = [
-    'Губкин Алексей',
-    'Роман Федоров',
-    'Сергеев Роман',
-    'Маколкин Максим'
-  ];
 
   function isSheetsExportActive() {
     const featureId = window.F5VRExtras && window.F5VRExtras.FEATURE_SHEETS_EXPORT;
@@ -2252,39 +2246,20 @@
     return !e || a === e;
   }
 
-  function filterSheetsDeptRows(allRows) {
-    const order = SHEETS_DEPT_EMPLOYEES.map((name) => normalizeSheetsEmployeeName(name).toLowerCase());
-    const wanted = new Set(order);
-    return (allRows || []).filter((cells) => {
-      return wanted.has(normalizeSheetsEmployeeName(cells[4]).toLowerCase());
-    }).sort((a, b) => {
-      const ai = order.indexOf(normalizeSheetsEmployeeName(a[4]).toLowerCase());
-      const bi = order.indexOf(normalizeSheetsEmployeeName(b[4]).toLowerCase());
-      if (ai !== bi) return ai - bi;
-      return String(a[0] || '').localeCompare(String(b[0] || ''), 'ru');
-    });
-  }
-
-  function sheetsDeptImportPayload(rows, raznoskaId, raznoskaLabel) {
-    return {
-      secret: getSheetsDeptImportSettings().importSecret || '',
-      sheetTab: getSheetsDeptImportSettings().sheetTab || '',
-      raznoskaId: String(raznoskaId || ''),
-      title: String(raznoskaLabel || raznoskaId || 'Разноска'),
-      headers: SHEETS_EXPORT_COLUMNS.map((col) => col.title),
-      employees: SHEETS_DEPT_EMPLOYEES.slice(),
-      rows: rows.map((cells) => cells.slice()),
-      totalHours: sheetsRowsTotalHours(rows)
-    };
-  }
-
-  async function runSheetsDeptImport(raznoskaId, raznoskaLabel) {
+  async function runSheetsDeptImport(raznoskaId) {
     const settings = getSheetsDeptImportSettings();
     if (!settings.importUrl) throw new Error('Укажите URL веб-приложения в настройках расширения.');
-    const allRows = await extractSheetsRows(raznoskaId);
-    const rows = filterSheetsDeptRows(allRows);
-    if (!rows.length) throw new Error('Не нашёл строк для сотрудников отдела в этой разноске.');
-    const payload = sheetsDeptImportPayload(rows, raznoskaId, raznoskaLabel);
+    if (!settings.importSecret) throw new Error('Укажите секретный токен в настройках расширения.');
+    if (!raznoskaId) throw new Error('Не удалось определить id разноски.');
+    const token = pageAuthToken();
+    if (!token) throw new Error('Не удалось получить токен. Обновите страницу разноски и войдите снова.');
+    const payload = {
+      secret: settings.importSecret,
+      sheetTab: settings.sheetTab || '',
+      raznoskaId: String(raznoskaId || ''),
+      token: token,
+      action: 'sync'
+    };
     const data = await new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({
         type: 'F5VR_SHEETS_DEPT_IMPORT',
@@ -2730,7 +2705,7 @@
         }
         deptBtn.disabled = true;
         if (statusEl) statusEl.textContent = 'Импорт…';
-        runSheetsDeptImport(raznoskaId, meta.raznoskaLabel).then((result) => {
+        runSheetsDeptImport(raznoskaId).then((result) => {
           deptBtn.disabled = false;
           if (statusEl) {
             statusEl.textContent = (result && result.message)
@@ -2806,7 +2781,6 @@
     const id = currentRaznoskaId();
     if (id) runSheetsExtractForRaznoska(id);
     else openSheetsRaznoskaPicker();
-    return { ok: true, rows: 0 };
   }
 
   // -------- Storage --------
